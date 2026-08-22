@@ -56,9 +56,12 @@ Field names are literal and identical across all plugins:
 ## StablecoinRegistry — security-critical
 
 > A wrong issuer address sends customer funds to a dead trustline → real, unrecoverable loss.
-> **Do not hand-transcribe these values.** They must be pulled programmatically from the Shopware
-> ground-truth `src/Provider/StablecoinProvider.php` and verified by an equality test against that
-> source. The values below are for reference/review only, not the implementation source.
+> **Do not hand-transcribe these values from memory.** They were pulled from the Shopware
+> ground-truth `src/Provider/StablecoinProvider.php` by reading the source file directly, once, at
+> authoring time, and are then treated as fixed in `Xrpl\StablecoinRegistry`. This repo has no
+> dependency on, or reference to, the Shopware repo — not even a test — so there is no standing
+> equality check to keep passing; verification happens once, deliberately, whenever these values
+> are touched.
 
 ```
 RLUSD  mainnet  issuer rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De  currency 524C555344000000000000000000000000000000
