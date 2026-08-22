@@ -1,0 +1,8 @@
+services:
+  php:
+    build: ./docker
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      XDEBUG_MODE: "${XDEBUG_MODE:-off}"   # Tests schnell; für Coverage: XDEBUG_MODE=coverage
