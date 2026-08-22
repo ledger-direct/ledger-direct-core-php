@@ -5,10 +5,20 @@
          colors="true"
          failOnWarning="true"
          failOnRisky="true"
-         failOnDeprecation="true">
+         failOnDeprecation="true"
+         defaultTestSuite="unit">
+    <!--
+        Plain `phpunit` (what CI and `docker compose run` `vendor/bin/phpunit` run) only executes
+        the "unit" suite: no network access. The "integration" suite hits the real oracle APIs and
+        is opt-in via the testsuite CLI flag; see README.md.
+    -->
     <testsuites>
         <testsuite name="unit">
             <directory>tests</directory>
+            <exclude>tests/Integration</exclude>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
 

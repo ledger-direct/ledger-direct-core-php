@@ -35,6 +35,22 @@ XDEBUG_MODE=coverage docker compose run --rm php vendor/bin/phpunit --coverage-t
 
 Requires PHP `^8.2`; CI runs the matrix `8.2` / `8.3` / `8.4`.
 
+## Running tests
+
+`vendor/bin/phpunit` (no flags — this is what CI runs) executes only the **unit** suite: no network
+access, all HTTP is against a fake PSR-18 client. There's also a separate, opt-in **integration**
+suite that hits the real Binance/Coingecko/Kraken APIs to check the oracle parsing still matches
+what those services actually return — deliberately excluded from the default run and from CI, since
+it depends on network access and third-party rate limits, not something to gate merges on.
+
+```
+docker compose run --rm php vendor/bin/phpunit                        # unit suite (default)
+docker compose run --rm php vendor/bin/phpunit --testsuite integration # real oracle APIs, needs network
+```
+
+Run the integration suite deliberately (e.g. after touching an `Oracle` class) — it's not
+CI-gating, and it can be flaky against live, rate-limited third-party APIs.
+
 ## Distribution
 
 At dev time this is a versioned Composer package. At release time it is bundled into each
