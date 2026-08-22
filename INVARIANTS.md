@@ -31,18 +31,19 @@ Field names are literal and identical across all plugins:
 | Field | Shape |
 |---|---|
 | `schema_version` | Integer, currently `1`. Always the first field in a serialized record. |
-| `type` | Asset identifier, e.g. `XRP`, `RLUSD`, `USDC`. |
+| `type` | Payment-method discriminator, e.g. `xrp-payment`, `rlusd-payment`, `usdc-payment`. Distinct from `base_asset` — see below. |
 | `chain` | e.g. `XRPL` — reserved so a later non-XRPL chain doesn't require a new record type. |
 | `network` | `mainnet` \| `testnet`. |
-| `base_asset` | |
+| `base_asset` | Asset identifier, e.g. `XRP`, `RLUSD`, `USDC`. Drives the `amount_requested` shape below. |
 | `quote_currency` | |
 | `pairing` | |
 | `exchange_rate` | |
-| `amount_requested` | `type === XRP` → float. `type === RLUSD \| USDC` → full XRPL `IssuedCurrencyAmount` object `{currency, value, issuer}`. Same field name, different shape depending on `type` — a known **v1 wart**; a later v2 can unify it without breaking v1 readers, which is exactly what the versioning is for. |
+| `amount_requested` | `base_asset === XRP` → float. `base_asset === RLUSD \| USDC` → full XRPL `IssuedCurrencyAmount` object `{currency, value, issuer}`. Same field name, different shape depending on `base_asset` — a known **v1 wart**; a later v2 can unify it without breaking v1 readers, which is exactly what the versioning is for. |
 | `destination_account` | |
 | `destination_tag` | |
 | `expiry` | |
 | `hash` | See [Tables](#tables) — unique per transaction. |
+| `ctid` | XRPL Compact Transaction ID — unlike `hash`, self-describing (encodes ledger index, transaction index, network id), so it disambiguates across networks. Set alongside `hash` once the payment is fulfilled; used to verify the transaction actually went through. **XRPL-specific, not a general blockchain concept** — optional/nullable so a future non-`XRPL` `chain` can fulfill without it. |
 | `amount_paid` / `delivered_amount` | |
 
 ## Conversion & rounding
