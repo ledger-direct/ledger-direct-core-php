@@ -6,19 +6,18 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Fixtures;
 
 use Hardcastle\LedgerDirect\Core\Port\TransactionRepositoryInterface;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplTransaction;
-use LogicException;
 
 /**
  * In-memory TransactionRepositoryInterface for the standalone test harness
- * (CLAUDE.md section 5). Only nextDestinationTagSequence() has real
- * behavior so far, plus a test-only control to script specific sequence
- * values; the rest throw until a future round's tests need them — extend
- * this fake then rather than each service writing its own.
+ * (CLAUDE.md section 5).
  *
  * @internal
  */
 final class InMemoryTransactionRepository implements TransactionRepositoryInterface
 {
+    /** @var array<string, XrplTransaction> stored transactions, keyed by hash */
+    private array $transactionsByHash = [];
+
     /** @var array<string, int> next sequence value per account */
     private array $sequences = [];
 
@@ -53,26 +52,55 @@ final class InMemoryTransactionRepository implements TransactionRepositoryInterf
 
     public function findExistingHashes(array $hashes): array
     {
-        throw new LogicException(__METHOD__ . ' not implemented in this fake yet.');
+        return array_values(array_intersect($hashes, array_keys($this->transactionsByHash)));
     }
 
     public function saveTransactions(array $transactions): void
     {
-        throw new LogicException(__METHOD__ . ' not implemented in this fake yet.');
+        foreach ($transactions as $transaction) {
+            $this->transactionsByHash[$transaction->hash] = $transaction;
+        }
     }
 
     public function findTransaction(string $destination, int $destinationTag): ?XrplTransaction
     {
-        throw new LogicException(__METHOD__ . ' not implemented in this fake yet.');
+        foreach ($this->transactionsByHash as $transaction) {
+            if ($transaction->destination === $destination && $transaction->destinationTag === $destinationTag) {
+                return $transaction;
+            }
+        }
+
+        return null;
     }
 
     public function getLastSyncedLedgerIndex(): ?string
     {
-        throw new LogicException(__METHOD__ . ' not implemented in this fake yet.');
+        if ($this->transactionsByHash === []) {
+            return null;
+        }
+
+        $max = null;
+        foreach ($this->transactionsByHash as $transaction) {
+            if ($max === null || (int) $transaction->ledgerIndex > (int) $max) {
+                $max = $transaction->ledgerIndex;
+            }
+        }
+
+        return $max;
     }
 
     public function truncate(): void
     {
-        throw new LogicException(__METHOD__ . ' not implemented in this fake yet.');
+        $this->transactionsByHash = [];
+    }
+
+    /**
+     * Test control: exposes what's stored, for assertions.
+     *
+     * @return XrplTransaction[]
+     */
+    public function storedTransactions(): array
+    {
+        return array_values($this->transactionsByHash);
     }
 }
