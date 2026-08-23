@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Xrpl;
 
-use Hardcastle\LedgerDirect\Core\Port\TransactionRepositoryInterface;
+use Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface;
 
 final class DestinationTagService
 {
@@ -39,14 +39,14 @@ final class DestinationTagService
     private const OFFSET = 104729;
 
     public function __construct(
-        private readonly TransactionRepositoryInterface $transactionRepository,
+        private readonly XrplTransactionRepositoryInterface $transactionRepository,
     ) {
     }
 
     /**
      * Deterministically derives a destination tag for $destinationAccount
      * from an atomic, strictly-increasing per-account sequence number
-     * (TransactionRepositoryInterface::nextDestinationTagSequence()) run
+     * (XrplTransactionRepositoryInterface::nextDestinationTagSequence()) run
      * through a bijective permutation over the tag range.
      *
      * Mathematically collision-free for a given account, not just

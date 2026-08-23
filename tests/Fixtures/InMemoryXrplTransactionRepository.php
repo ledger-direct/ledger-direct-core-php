@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Tests\Fixtures;
 
-use Hardcastle\LedgerDirect\Core\Port\TransactionRepositoryInterface;
+use Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplTransaction;
 
 /**
- * In-memory TransactionRepositoryInterface for the standalone test harness
- * (CLAUDE.md section 5).
+ * In-memory XrplTransactionRepositoryInterface for the standalone test
+ * harness (CLAUDE.md section 5).
  *
  * @internal
  */
-final class InMemoryTransactionRepository implements TransactionRepositoryInterface
+final class InMemoryXrplTransactionRepository implements XrplTransactionRepositoryInterface
 {
     /** @var array<string, XrplTransaction> stored transactions, keyed by hash */
     private array $transactionsByHash = [];

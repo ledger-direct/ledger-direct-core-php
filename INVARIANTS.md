@@ -91,7 +91,7 @@ currency code is still the 40-character USDC representation.
   range. Not an XRPL protocol constraint — a schema choice the core corrects.
 - `ledger_direct_xrpl_destination_tag` holds **one row per destination account**, not one row per
   issued tag: `destination_account` (primary key) + a `sequence` counter (**unsigned 32-bit**,
-  atomically incremented — see `TransactionRepositoryInterface::nextDestinationTagSequence()`).
+  atomically incremented — see `XrplTransactionRepositoryInterface::nextDestinationTagSequence()`).
   `DestinationTagService` derives the actual tag from that counter via a fixed permutation rather
   than storing every issued tag, so this table stays a small, constant-size-per-account row instead
   of growing by one row per order.

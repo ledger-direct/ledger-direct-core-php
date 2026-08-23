@@ -12,6 +12,12 @@ use Hardcastle\LedgerDirect\Core\Port\ConfigProviderInterface;
  * need to change merchant config mid-scenario (e.g. simulating the
  * destination account being reconfigured).
  *
+ * $chain is accepted on every interface method (matching the real
+ * contract) but currently ignored — this fixture holds one global set of
+ * values, since every current test scenario is XRPL-only. Genuinely
+ * per-chain fixture state is a YAGNI call until a test actually needs to
+ * distinguish chains.
+ *
  * @internal
  */
 final class FakeConfigProvider implements ConfigProviderInterface
@@ -24,7 +30,7 @@ final class FakeConfigProvider implements ConfigProviderInterface
     ) {
     }
 
-    public function getNetwork(): string
+    public function getNetwork(string $chain): string
     {
         return $this->network;
     }
@@ -34,7 +40,7 @@ final class FakeConfigProvider implements ConfigProviderInterface
         $this->network = $network;
     }
 
-    public function getDestinationAccount(): string
+    public function getDestinationAccount(string $chain): string
     {
         return $this->destinationAccount;
     }
@@ -44,7 +50,7 @@ final class FakeConfigProvider implements ConfigProviderInterface
         $this->destinationAccount = $destinationAccount;
     }
 
-    public function isAssetEnabled(string $baseAsset): bool
+    public function isAssetEnabled(string $chain, string $baseAsset): bool
     {
         return $this->assetEnabled;
     }

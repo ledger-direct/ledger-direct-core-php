@@ -12,12 +12,17 @@ use Hardcastle\LedgerDirect\Core\Xrpl\XrplTransaction;
  * primitives only — destination-tag generation and sync/dedup orchestration
  * are core-side service behavior, not the platform's concern.
  *
+ * XRPL-specific by name and shape (XrplTransaction, ledger-index/marker
+ * pagination) — deliberately not a generalized multi-chain interface. A
+ * future second chain (e.g. Stellar) gets its own sibling port with its own
+ * transaction/pagination shape, not a forced fit into this one.
+ *
  * `destination_tag` must be an **unsigned** 32-bit integer column (XRPL's
  * DestinationTag field's true range is 0–4294967295) — a signed 32-bit
  * column overflows above 2147483647, silently truncating/rejecting values
  * DestinationTagService can legitimately generate. See INVARIANTS.md.
  */
-interface TransactionRepositoryInterface
+interface XrplTransactionRepositoryInterface
 {
     /**
      * Returns a number that is unique and strictly increasing per

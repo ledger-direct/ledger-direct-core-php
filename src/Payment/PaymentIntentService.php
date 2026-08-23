@@ -47,11 +47,11 @@ final class PaymentIntentService
         string $baseAsset,
         ?PaymentIntent $existing = null,
     ): PaymentIntent {
-        if (!$this->configProvider->isAssetEnabled($baseAsset)) {
+        if (!$this->configProvider->isAssetEnabled(self::CHAIN, $baseAsset)) {
             throw new AssetNotAcceptedException("Payments in {$baseAsset} are not currently accepted.");
         }
 
-        $network = $this->configProvider->getNetwork();
+        $network = $this->configProvider->getNetwork(self::CHAIN);
         $priceQuote = $this->priceService->getCryptoPriceForOrder($total, $quoteCurrency, $baseAsset, $network);
         [$destinationAccount, $destinationTag] = $this->resolveDestination($existing);
 
@@ -76,7 +76,7 @@ final class PaymentIntentService
      */
     private function resolveDestination(?PaymentIntent $existing): array
     {
-        $currentDestinationAccount = $this->configProvider->getDestinationAccount();
+        $currentDestinationAccount = $this->configProvider->getDestinationAccount(self::CHAIN);
 
         if ($existing !== null && $existing->destinationAccount === $currentDestinationAccount) {
             return [$existing->destinationAccount, $existing->destinationTag];

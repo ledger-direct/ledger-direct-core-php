@@ -6,7 +6,7 @@ namespace Hardcastle\LedgerDirect\Core\Xrpl;
 
 /**
  * A synced XRPL transaction, as persisted by the platform through
- * {@see \Hardcastle\LedgerDirect\Core\Port\TransactionRepositoryInterface}.
+ * {@see \Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface}.
  * Mirrors the `ledger_direct_xrpl_tx` table (see INVARIANTS.md), minus the
  * storage-generated primary key.
  */

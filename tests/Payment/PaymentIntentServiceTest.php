@@ -12,7 +12,7 @@ use Hardcastle\LedgerDirect\Core\Price\PriceService;
 use Hardcastle\LedgerDirect\Core\Price\PriceUnavailableException;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeConfigProvider;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryTransactionRepository;
+use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
 use PHPUnit\Framework\TestCase;
@@ -22,7 +22,7 @@ final class PaymentIntentServiceTest extends TestCase
     public function testBuildsAFreshPaymentIntentWhenThereIsNoExistingOne(): void
     {
         $client = new FakeHttpClient();
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $configProvider = new FakeConfigProvider();
         $service = $this->makeService($client, $repository, $configProvider);
 
@@ -43,7 +43,7 @@ final class PaymentIntentServiceTest extends TestCase
 
     public function testTypeMappingForStablecoinsViaThePegFastPath(): void
     {
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $configProvider = new FakeConfigProvider();
         $service = $this->makeService(new FakeHttpClient(), $repository, $configProvider);
 
@@ -55,7 +55,7 @@ final class PaymentIntentServiceTest extends TestCase
     public function testReusesTheExistingDestinationWhenTheAccountStillMatches(): void
     {
         $client = new FakeHttpClient();
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $configProvider = new FakeConfigProvider();
         $service = $this->makeService($client, $repository, $configProvider);
 
@@ -80,7 +80,7 @@ final class PaymentIntentServiceTest extends TestCase
     public function testGeneratesAFreshTagWhenTheExistingAccountIsStale(): void
     {
         $client = new FakeHttpClient();
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $configProvider = new FakeConfigProvider(destinationAccount: 'rOldAddress');
         $service = $this->makeService($client, $repository, $configProvider);
 
@@ -104,7 +104,7 @@ final class PaymentIntentServiceTest extends TestCase
     public function testDisabledAssetThrowsWithoutAttemptingAPriceLookup(): void
     {
         $client = new FakeHttpClient(); // nothing queued — a price lookup attempt would throw a different exception
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $configProvider = new FakeConfigProvider(assetEnabled: false);
         $service = $this->makeService($client, $repository, $configProvider);
 
@@ -119,7 +119,7 @@ final class PaymentIntentServiceTest extends TestCase
         $client->queueResponse('api.binance.com', new Response(200, [], '{}'));
         $client->queueResponse('api.coingecko.com', new Response(200, [], '{}'));
         $client->queueResponse('api.kraken.com', new Response(200, [], '{"result":{}}'));
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $service = $this->makeService($client, $repository, new FakeConfigProvider());
 
         $this->expectException(PriceUnavailableException::class);
@@ -129,7 +129,7 @@ final class PaymentIntentServiceTest extends TestCase
 
     private function makeService(
         FakeHttpClient $client,
-        InMemoryTransactionRepository $repository,
+        InMemoryXrplTransactionRepository $repository,
         FakeConfigProvider $configProvider,
     ): PaymentIntentService {
         $requestFactory = new HttpFactory();

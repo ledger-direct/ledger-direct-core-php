@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Xrpl;
 
-use Hardcastle\LedgerDirect\Core\Port\TransactionRepositoryInterface;
+use Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface;
 use Psr\Log\LoggerInterface;
 use Throwable;
 use UnexpectedValueException;
@@ -21,7 +21,7 @@ final class SyncService
 
     public function __construct(
         private readonly XrplClient $xrplClient,
-        private readonly TransactionRepositoryInterface $transactionRepository,
+        private readonly XrplTransactionRepositoryInterface $transactionRepository,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -56,7 +56,7 @@ final class SyncService
      * The "Match" part: finds an already-synced transaction for a
      * destination account/tag pair. A thin delegate — exists so a platform
      * integration has one service for the whole "did this order get paid"
-     * flow instead of needing TransactionRepositoryInterface injected
+     * flow instead of needing XrplTransactionRepositoryInterface injected
      * separately just for this.
      */
     public function findTransaction(string $destinationAccount, int $destinationTag): ?XrplTransaction

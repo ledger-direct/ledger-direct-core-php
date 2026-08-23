@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Tests\Xrpl;
 
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryTransactionRepository;
+use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagsExhaustedException;
 use PHPUnit\Framework\TestCase;
@@ -20,7 +20,7 @@ final class DestinationTagServiceTest extends TestCase
 
     public function testGivenSequenceAlwaysMapsToTheSameTag(): void
     {
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $repository->scriptSequences(self::ACCOUNT_A, [0]);
         $service = new DestinationTagService($repository);
 
@@ -30,7 +30,7 @@ final class DestinationTagServiceTest extends TestCase
 
     public function testDistinctSequencesMapToDistinctTags(): void
     {
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $service = new DestinationTagService($repository);
 
         $tags = [];
@@ -43,7 +43,7 @@ final class DestinationTagServiceTest extends TestCase
 
     public function testEveryGeneratedTagIsWithinTheValidRange(): void
     {
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $service = new DestinationTagService($repository);
 
         for ($i = 0; $i < 1000; $i++) {
@@ -56,7 +56,7 @@ final class DestinationTagServiceTest extends TestCase
 
     public function testForwardsTheAccountToNextDestinationTagSequence(): void
     {
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $repository->scriptSequences(self::ACCOUNT_B, [42]);
         $service = new DestinationTagService($repository);
 
@@ -66,7 +66,7 @@ final class DestinationTagServiceTest extends TestCase
 
     public function testThrowsWhenTheAccountsSequenceIsExhausted(): void
     {
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $repository->scriptSequences(self::ACCOUNT_A, [self::RANGE_SIZE]);
         $service = new DestinationTagService($repository);
 

@@ -7,7 +7,7 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Xrpl;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryTransactionRepository;
+use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncService;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplClient;
@@ -112,12 +112,12 @@ final class SyncServiceTest extends TestCase
     }
 
     /**
-     * @return array{0: FakeHttpClient, 1: InMemoryTransactionRepository, 2: SyncService, 3: RecordingLogger}
+     * @return array{0: FakeHttpClient, 1: InMemoryXrplTransactionRepository, 2: SyncService, 3: RecordingLogger}
      */
     private function makeService(): array
     {
         $client = new FakeHttpClient();
-        $repository = new InMemoryTransactionRepository();
+        $repository = new InMemoryXrplTransactionRepository();
         $logger = new RecordingLogger();
         $service = new SyncService(
             new XrplClient($client, new HttpFactory(), new HttpFactory()),
