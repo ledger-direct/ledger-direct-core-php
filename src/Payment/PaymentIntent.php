@@ -19,9 +19,18 @@ final readonly class PaymentIntent
 {
     public const SCHEMA_VERSION = 1;
 
-    private const KNOWN_ASSETS = ['XRP', 'RLUSD', 'USDC'];
-
-    private const STABLECOIN_ASSETS = ['RLUSD', 'USDC'];
+    /**
+     * The chain's native asset is float-shaped; every other asset on that
+     * chain is an IssuedCurrencyAmount — see assertAmountShape(). Not a
+     * closed allowlist of accepted assets: a merchant-issued token (e.g. a
+     * future Loyalty point) the core has never heard of is still accepted,
+     * as an issued currency, without needing a core change. An unrecognized
+     * chain defaults to "everything is an issued currency" (the safer,
+     * more structured shape) rather than silently accepting a bare float.
+     */
+    private const NATIVE_ASSET_BY_CHAIN = [
+        'XRPL' => 'XRP',
+    ];
 
     private const REQUIRED_FIELDS = [
         'type', 'chain', 'network', 'base_asset', 'quote_currency', 'pairing',
@@ -45,10 +54,10 @@ final readonly class PaymentIntent
         public ?string $ctid = null,
         public float|array|null $amountPaid = null,
     ) {
-        self::assertAmountShape($baseAsset, $amountRequested, 'amount_requested');
+        self::assertAmountShape($chain, $baseAsset, $amountRequested, 'amount_requested');
 
         if ($amountPaid !== null) {
-            self::assertAmountShape($baseAsset, $amountPaid, 'amount_paid');
+            self::assertAmountShape($chain, $baseAsset, $amountPaid, 'amount_paid');
         }
     }
 
@@ -183,19 +192,15 @@ final readonly class PaymentIntent
         ];
     }
 
-    private static function assertAmountShape(string $baseAsset, float|array $amount, string $field): void
+    private static function assertAmountShape(string $chain, string $baseAsset, float|array $amount, string $field): void
     {
-        if (!in_array($baseAsset, self::KNOWN_ASSETS, true)) {
-            throw new InvalidArgumentException("Unknown base_asset '{$baseAsset}'.");
-        }
+        $isNativeAsset = $baseAsset === (self::NATIVE_ASSET_BY_CHAIN[$chain] ?? null);
 
-        $isStablecoin = in_array($baseAsset, self::STABLECOIN_ASSETS, true);
-
-        if ($isStablecoin !== is_array($amount)) {
+        if ($isNativeAsset === is_array($amount)) {
             throw new InvalidArgumentException(
-                $isStablecoin
-                    ? "{$field} must be an IssuedCurrencyAmount array for base_asset {$baseAsset}."
-                    : "{$field} must be a float for base_asset {$baseAsset}."
+                $isNativeAsset
+                    ? "{$field} must be a float for native asset {$baseAsset} on chain {$chain}."
+                    : "{$field} must be an IssuedCurrencyAmount array for base_asset {$baseAsset}."
             );
         }
 

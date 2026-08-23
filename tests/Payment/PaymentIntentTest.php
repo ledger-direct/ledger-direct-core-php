@@ -129,8 +129,12 @@ final class PaymentIntentTest extends TestCase
         );
     }
 
-    public function testConstructorRejectsUnknownBaseAsset(): void
+    public function testConstructorRejectsFloatAmountOnAChainWithNoRegisteredNativeAsset(): void
     {
+        // 'BTC' chain isn't in NATIVE_ASSET_BY_CHAIN, so everything on it is
+        // treated as an issued currency by default (the safer shape) — a
+        // bare float is rejected, not because 'BTC' the asset is unknown,
+        // but because it doesn't match a registered native asset for this chain.
         $this->expectException(InvalidArgumentException::class);
 
         PaymentIntent::quote(
@@ -145,6 +149,29 @@ final class PaymentIntentTest extends TestCase
             destinationAccount: 'someAddress',
             destinationTag: 1,
         );
+    }
+
+    public function testAcceptsAPreviouslyUnrecognizedAssetOnXrplAsAnIssuedCurrency(): void
+    {
+        // Proves the open-by-default rule: a merchant-issued token (e.g. a
+        // future Loyalty point) the core has never heard of is still
+        // accepted, as an issued currency, without any core change —
+        // previously this would have thrown "Unknown base_asset".
+        $intent = PaymentIntent::quote(
+            type: 'loyalty-payment',
+            chain: 'XRPL',
+            network: 'mainnet',
+            baseAsset: 'MYSHOP_POINTS',
+            quoteCurrency: 'USD',
+            pairing: 'MYSHOP_POINTS/USD',
+            exchangeRate: 100.0,
+            amountRequested: ['currency' => '4D5953484F505F504F494E545300000000000000', 'value' => '500', 'issuer' => 'rMerchantIssuerAddress'],
+            destinationAccount: 'rDestinationAccount',
+            destinationTag: 1,
+        );
+
+        self::assertSame('MYSHOP_POINTS', $intent->baseAsset);
+        self::assertIsArray($intent->amountRequested);
     }
 
     public function testWithFulfillmentReturnsNewImmutableInstance(): void

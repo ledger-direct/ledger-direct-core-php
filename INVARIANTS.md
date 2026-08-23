@@ -34,11 +34,11 @@ Field names are literal and identical across all plugins:
 | `type` | Payment-method discriminator, e.g. `xrp-payment`, `rlusd-payment`, `usdc-payment`. Distinct from `base_asset` — see below. |
 | `chain` | e.g. `XRPL` — reserved so a later non-XRPL chain doesn't require a new record type. |
 | `network` | `mainnet` \| `testnet`. |
-| `base_asset` | Asset identifier, e.g. `XRP`, `RLUSD`, `USDC`. Drives the `amount_requested` shape below. |
+| `base_asset` | Asset identifier, e.g. `XRP`, `RLUSD`, `USDC` — or any other asset issued on `chain`, including ones the core has never heard of (e.g. a merchant-issued token). Drives the `amount_requested` shape below. |
 | `quote_currency` | |
 | `pairing` | |
 | `exchange_rate` | |
-| `amount_requested` | `base_asset === XRP` → float. `base_asset === RLUSD \| USDC` → full XRPL `IssuedCurrencyAmount` object `{currency, value, issuer}`. Same field name, different shape depending on `base_asset` — a known **v1 wart**; a later v2 can unify it without breaking v1 readers, which is exactly what the versioning is for. |
+| `amount_requested` | `base_asset` is `chain`'s native asset (e.g. `XRP` on `XRPL`) → float. Anything else → full `IssuedCurrencyAmount` object `{currency, value, issuer}` — **not a closed allowlist**: an asset the core doesn't recognize still gets the issued-currency shape, it isn't rejected. Same field name, different shape depending on whether `base_asset` is native — a known **v1 wart**; a later v2 can unify it without breaking v1 readers, which is exactly what the versioning is for. |
 | `destination_account` | |
 | `destination_tag` | |
 | `expiry` | |
