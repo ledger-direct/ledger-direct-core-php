@@ -25,6 +25,9 @@ final class FakeHttpClient implements ClientInterface
     /** @var array<int, array{needle: string, result: ResponseInterface|Throwable}> */
     private array $queue = [];
 
+    /** @var list<RequestInterface> every request received, in order — for asserting what was sent */
+    private array $sentRequests = [];
+
     public function queueResponse(string $urlContains, ResponseInterface|Throwable $result): void
     {
         $this->queue[] = ['needle' => $urlContains, 'result' => $result];
@@ -32,6 +35,7 @@ final class FakeHttpClient implements ClientInterface
 
     public function sendRequest(RequestInterface $request): ResponseInterface
     {
+        $this->sentRequests[] = $request;
         $uri = (string) $request->getUri();
 
         foreach ($this->queue as $entry) {
@@ -45,5 +49,10 @@ final class FakeHttpClient implements ClientInterface
         }
 
         throw new RuntimeException("FakeHttpClient: no response queued for URL '{$uri}'.");
+    }
+
+    public function lastRequest(): ?RequestInterface
+    {
+        return $this->sentRequests[count($this->sentRequests) - 1] ?? null;
     }
 }
