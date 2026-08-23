@@ -15,55 +15,59 @@ final class DestinationTagServiceTest extends TestCase
 
     private const ACCOUNT_B = 'rAccountB';
 
-    public function testReturnsATagWithinTheValidRange(): void
+    /** first sequence value beyond the account's usable range (RANGE_SIZE = 4294967295 - 10000 + 1) */
+    private const RANGE_SIZE = 4294957296;
+
+    public function testGivenSequenceAlwaysMapsToTheSameTag(): void
     {
-        $service = new DestinationTagService(new InMemoryTransactionRepository());
+        $repository = new InMemoryTransactionRepository();
+        $repository->scriptSequences(self::ACCOUNT_A, [0]);
+        $service = new DestinationTagService($repository);
 
-        $tag = $service->generateDestinationTag(self::ACCOUNT_A);
-
-        self::assertGreaterThanOrEqual(10000, $tag);
-        self::assertLessThanOrEqual(4294967295, $tag);
+        // Deterministic: verified independently via `php -r` before writing this assertion.
+        self::assertSame(114729, $service->generateDestinationTag(self::ACCOUNT_A));
     }
 
-    public function testReservesTheTagItReturnsForThatAccount(): void
+    public function testDistinctSequencesMapToDistinctTags(): void
     {
         $repository = new InMemoryTransactionRepository();
         $service = new DestinationTagService($repository);
 
-        $tag = $service->generateDestinationTag(self::ACCOUNT_A);
+        $tags = [];
+        for ($i = 0; $i < 10000; $i++) {
+            $tags[] = $service->generateDestinationTag(self::ACCOUNT_A);
+        }
 
-        self::assertTrue($repository->isDestinationTagReserved(self::ACCOUNT_A, $tag));
+        self::assertCount(10000, array_unique($tags));
     }
 
-    public function testReservationIsScopedPerAccount(): void
+    public function testEveryGeneratedTagIsWithinTheValidRange(): void
     {
         $repository = new InMemoryTransactionRepository();
         $service = new DestinationTagService($repository);
 
-        $tag = $service->generateDestinationTag(self::ACCOUNT_A);
+        for ($i = 0; $i < 1000; $i++) {
+            $tag = $service->generateDestinationTag(self::ACCOUNT_A);
 
-        // The same tag is still free for a different account.
-        self::assertFalse($repository->isDestinationTagReserved(self::ACCOUNT_B, $tag));
+            self::assertGreaterThanOrEqual(10000, $tag);
+            self::assertLessThanOrEqual(4294967295, $tag);
+        }
     }
 
-    public function testRetriesUntilAFreeTagIsFound(): void
+    public function testForwardsTheAccountToNextDestinationTagSequence(): void
     {
         $repository = new InMemoryTransactionRepository();
-        $repository->rejectNextCalls(5); // forces 5 collisions before a real check happens
-
+        $repository->scriptSequences(self::ACCOUNT_B, [42]);
         $service = new DestinationTagService($repository);
 
-        $tag = $service->generateDestinationTag(self::ACCOUNT_A);
-
-        self::assertGreaterThanOrEqual(10000, $tag);
-        self::assertLessThanOrEqual(4294967295, $tag);
+        // Deterministic: verified independently via `php -r` before writing this assertion.
+        self::assertSame(4110940623, $service->generateDestinationTag(self::ACCOUNT_B));
     }
 
-    public function testThrowsWhenAttemptsAreExhausted(): void
+    public function testThrowsWhenTheAccountsSequenceIsExhausted(): void
     {
         $repository = new InMemoryTransactionRepository();
-        $repository->reserveEverything();
-
+        $repository->scriptSequences(self::ACCOUNT_A, [self::RANGE_SIZE]);
         $service = new DestinationTagService($repository);
 
         $this->expectException(DestinationTagsExhaustedException::class);

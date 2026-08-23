@@ -85,14 +85,16 @@ currency code is still the 40-character USDC representation.
 - `ledger_direct_xrpl_tx`, `ledger_direct_xrpl_destination_tag` — naming convention
   `ledger_direct_{chain}_{entity}`.
 - Unique index on `hash`.
-- `destination_tag` is an **unsigned 32-bit integer** column — XRPL's DestinationTag field's true
+- `destination_tag` values are **unsigned 32-bit integers** — XRPL's DestinationTag field's true
   range is `0`–`4294967295`. Ground truth's MySQL schema uses a *signed* `INT`, capping usable
   values at `2147483647`; the core's `DestinationTagService` generates across the full unsigned
-  range, so a signed column would silently truncate/reject values above that. Not an XRPL protocol
-  constraint — a schema choice the core corrects.
-- `ledger_direct_xrpl_destination_tag` also carries a `destination_account` column — reservation is
-  scoped per destination account, not global (ground truth scopes it globally); primary key is the
-  pair `(destination_account, destination_tag)`, not `destination_tag` alone.
+  range. Not an XRPL protocol constraint — a schema choice the core corrects.
+- `ledger_direct_xrpl_destination_tag` holds **one row per destination account**, not one row per
+  issued tag: `destination_account` (primary key) + a `sequence` counter (**unsigned 32-bit**,
+  atomically incremented — see `TransactionRepositoryInterface::nextDestinationTagSequence()`).
+  `DestinationTagService` derives the actual tag from that counter via a fixed permutation rather
+  than storing every issued tag, so this table stays a small, constant-size-per-account row instead
+  of growing by one row per order.
 - The core defines the **schema** (SQL/DDL as a constant or migration template); the platform
   creates it through its own DB layer.
 

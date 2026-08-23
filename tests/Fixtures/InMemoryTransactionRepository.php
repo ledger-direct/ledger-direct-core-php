@@ -10,60 +10,45 @@ use LogicException;
 
 /**
  * In-memory TransactionRepositoryInterface for the standalone test harness
- * (CLAUDE.md section 5). Only the destination-tag methods have real
- * behavior so far, plus test-only controls to force collisions
- * deterministically; the rest throw until a future round's tests need
- * them — extend this fake then rather than each service writing its own.
+ * (CLAUDE.md section 5). Only nextDestinationTagSequence() has real
+ * behavior so far, plus a test-only control to script specific sequence
+ * values; the rest throw until a future round's tests need them — extend
+ * this fake then rather than each service writing its own.
  *
  * @internal
  */
 final class InMemoryTransactionRepository implements TransactionRepositoryInterface
 {
-    /** @var array<string, array<int, true>> */
-    private array $reservedDestinationTags = [];
+    /** @var array<string, int> next sequence value per account */
+    private array $sequences = [];
 
-    private bool $reserveEverything = false;
+    /** @var array<string, list<int>> scripted sequence values per account, consumed first */
+    private array $scriptedSequences = [];
 
-    private int $rejectNextCalls = 0;
-
-    public function isDestinationTagReserved(string $destinationAccount, int $destinationTag): bool
+    public function nextDestinationTagSequence(string $destinationAccount): int
     {
-        if ($this->reserveEverything) {
-            return true;
+        if (!empty($this->scriptedSequences[$destinationAccount] ?? [])) {
+            return array_shift($this->scriptedSequences[$destinationAccount]);
         }
 
-        if ($this->rejectNextCalls > 0) {
-            $this->rejectNextCalls--;
+        $next = $this->sequences[$destinationAccount] ?? 0;
+        $this->sequences[$destinationAccount] = $next + 1;
 
-            return true;
-        }
-
-        return isset($this->reservedDestinationTags[$destinationAccount][$destinationTag]);
-    }
-
-    public function reserveDestinationTag(string $destinationAccount, int $destinationTag): void
-    {
-        $this->reservedDestinationTags[$destinationAccount][$destinationTag] = true;
+        return $next;
     }
 
     /**
-     * Test control: makes isDestinationTagReserved() report "reserved" for
-     * every tag, unconditionally — for forcing DestinationTagsExhaustedException.
+     * Test control: makes the next calls to nextDestinationTagSequence() for
+     * $destinationAccount return these specific values, in order, before
+     * falling back to the real incrementing counter — for deterministically
+     * testing specific sequence numbers (e.g. forcing
+     * DestinationTagsExhaustedException with a value at RANGE_SIZE).
+     *
+     * @param int[] $sequences
      */
-    public function reserveEverything(): void
+    public function scriptSequences(string $destinationAccount, array $sequences): void
     {
-        $this->reserveEverything = true;
-    }
-
-    /**
-     * Test control: makes the next $count calls to isDestinationTagReserved()
-     * report "reserved" regardless of which tag is asked about, then falls
-     * back to real behavior — for deterministically proving a retry loop
-     * without depending on random_int()'s actual output.
-     */
-    public function rejectNextCalls(int $count): void
-    {
-        $this->rejectNextCalls = $count;
+        $this->scriptedSequences[$destinationAccount] = $sequences;
     }
 
     public function findExistingHashes(array $hashes): array

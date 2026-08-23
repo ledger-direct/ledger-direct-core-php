@@ -20,23 +20,21 @@ use Hardcastle\LedgerDirect\Core\Xrpl\XrplTransaction;
 interface TransactionRepositoryInterface
 {
     /**
-     * Reservation is scoped per $destinationAccount, not global — matches
-     * how findTransaction() below already matches per-account, and means a
-     * merchant rotating their destination address doesn't permanently
-     * shrink a shared global pool.
+     * Returns a number that is unique and strictly increasing per
+     * $destinationAccount, starting at 0 the first time this is called for
+     * a given account (1 the second time, etc). DestinationTagService turns
+     * this into the actual destination tag via a fixed bijective
+     * permutation — this method only needs to guarantee the sequence
+     * itself never repeats for that account.
+     *
+     * MUST be atomic under concurrent calls for the same account — e.g. a
+     * per-account counter row updated via the platform DB's native atomic
+     * increment (MySQL: `INSERT ... ON DUPLICATE KEY UPDATE counter =
+     * counter + 1`), not a select-then-update pair. Unlike a raw random
+     * value, an atomic counter has no collision to check for, so there's no
+     * check-then-act race here the way there used to be.
      */
-    public function isDestinationTagReserved(string $destinationAccount, int $destinationTag): bool;
-
-    /**
-     * Called only after DestinationTagService has checked
-     * isDestinationTagReserved() itself — check-then-reserve, not atomic.
-     * Two concurrent calls can both pass that check for the same
-     * (account, tag) pair before either reserves it; a real but
-     * very-low-probability race given the ~4.29 billion-value range and
-     * that a reservation is a single fast write. Known and accepted, not
-     * fixed by redesigning this into a reserve-or-throw contract.
-     */
-    public function reserveDestinationTag(string $destinationAccount, int $destinationTag): void;
+    public function nextDestinationTagSequence(string $destinationAccount): int;
 
     /**
      * @param string[] $hashes

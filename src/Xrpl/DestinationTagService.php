@@ -19,7 +19,24 @@ final class DestinationTagService
      */
     private const RANGE_MAX = 4294967295;
 
-    private const MAX_ATTEMPTS = 1000;
+    private const RANGE_SIZE = self::RANGE_MAX - self::RANGE_MIN + 1;
+
+    /**
+     * Coprime to RANGE_SIZE (verified: gcd(1836311903, 4294957296) === 1) —
+     * the necessary-and-sufficient condition for f(n) = (n * MULTIPLIER) mod
+     * RANGE_SIZE to be a bijection over 0..RANGE_SIZE-1. Not secret: tags
+     * aren't sensitive, this is a single shared constant across every
+     * installation, same reasoning as the fixed oracle set / JSON-RPC URLs
+     * elsewhere in the core. Also chosen so MULTIPLIER * (RANGE_SIZE - 1)
+     * stays under PHP_INT_MAX on 64-bit — no BigInteger needed.
+     */
+    private const MULTIPLIER = 1836311903;
+
+    /**
+     * Arbitrary fixed constant so sequence 0 doesn't always map to exactly
+     * RANGE_MIN; doesn't affect bijectivity for any fixed value.
+     */
+    private const OFFSET = 104729;
 
     public function __construct(
         private readonly TransactionRepositoryInterface $transactionRepository,
@@ -27,28 +44,29 @@ final class DestinationTagService
     }
 
     /**
-     * Picks a random, currently-unreserved destination tag for
-     * $destinationAccount and reserves it. Reservation is scoped per
-     * account — see TransactionRepositoryInterface.
+     * Deterministically derives a destination tag for $destinationAccount
+     * from an atomic, strictly-increasing per-account sequence number
+     * (TransactionRepositoryInterface::nextDestinationTagSequence()) run
+     * through a bijective permutation over the tag range.
      *
-     * Check-then-reserve, not atomic — see TransactionRepositoryInterface's
-     * docblock for the residual (very low probability, given the range)
-     * race between two concurrent calls for the same account.
+     * Mathematically collision-free for a given account, not just
+     * low-probability: distinct sequence numbers always produce distinct
+     * tags, and the sequence itself never repeats before RANGE_SIZE calls
+     * (the account's real exhaustion point — see below). No pre-generation,
+     * no retry loop, O(1) regardless of how many tags the account already
+     * has, and the result still looks random from the outside.
      */
     public function generateDestinationTag(string $destinationAccount): int
     {
-        for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
-            $candidate = random_int(self::RANGE_MIN, self::RANGE_MAX);
+        $sequence = $this->transactionRepository->nextDestinationTagSequence($destinationAccount);
 
-            if (!$this->transactionRepository->isDestinationTagReserved($destinationAccount, $candidate)) {
-                $this->transactionRepository->reserveDestinationTag($destinationAccount, $candidate);
-
-                return $candidate;
-            }
+        if ($sequence >= self::RANGE_SIZE || $sequence < 0) {
+            throw new DestinationTagsExhaustedException(
+                "Destination account {$destinationAccount} has issued all " . self::RANGE_SIZE
+                . ' available destination tags.'
+            );
         }
 
-        throw new DestinationTagsExhaustedException(
-            "Could not find a free destination tag for {$destinationAccount} after " . self::MAX_ATTEMPTS . ' attempts.'
-        );
+        return self::RANGE_MIN + (($sequence * self::MULTIPLIER + self::OFFSET) % self::RANGE_SIZE);
     }
 }
