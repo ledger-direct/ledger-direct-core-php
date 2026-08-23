@@ -16,6 +16,15 @@ interface TransactionRepositoryInterface
 {
     public function isDestinationTagReserved(int $destinationTag): bool;
 
+    /**
+     * Called only after DestinationTagService has checked
+     * isDestinationTagReserved() itself — check-then-reserve, not atomic.
+     * Two concurrent calls can both pass that check for the same tag before
+     * either reserves it; a real but very-low-probability race given the
+     * ~2.14 billion-value range and that a reservation is a single fast
+     * write. Known and accepted, not fixed by redesigning this into a
+     * reserve-or-throw contract.
+     */
     public function reserveDestinationTag(int $destinationTag): void;
 
     /**
