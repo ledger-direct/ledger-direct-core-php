@@ -18,7 +18,7 @@ final class DestinationTagServiceTest extends TestCase
         $tag = $service->generateDestinationTag();
 
         self::assertGreaterThanOrEqual(10000, $tag);
-        self::assertLessThanOrEqual(2140000000, $tag);
+        self::assertLessThanOrEqual(4294967295, $tag);
     }
 
     public function testReservesTheTagItReturns(): void
@@ -41,7 +41,7 @@ final class DestinationTagServiceTest extends TestCase
         $tag = $service->generateDestinationTag();
 
         self::assertGreaterThanOrEqual(10000, $tag);
-        self::assertLessThanOrEqual(2140000000, $tag);
+        self::assertLessThanOrEqual(4294967295, $tag);
     }
 
     public function testThrowsWhenAttemptsAreExhausted(): void

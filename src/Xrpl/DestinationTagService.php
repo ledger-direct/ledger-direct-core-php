@@ -10,7 +10,14 @@ final class DestinationTagService
 {
     private const RANGE_MIN = 10000;
 
-    private const RANGE_MAX = 2140000000;
+    /**
+     * XRPL's DestinationTag field is an unsigned 32-bit integer; this is
+     * its true maximum (4294967295 = 2^32 - 1). Ground truth capped this at
+     * 2140000000 to stay under a *signed* 32-bit MySQL `INT` column's max —
+     * not an XRPL protocol limit. The core's schema uses `INT UNSIGNED` for
+     * this column (see INVARIANTS.md), so the core uses the full range.
+     */
+    private const RANGE_MAX = 4294967295;
 
     private const MAX_ATTEMPTS = 1000;
 

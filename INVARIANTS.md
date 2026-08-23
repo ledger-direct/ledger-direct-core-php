@@ -85,6 +85,11 @@ currency code is still the 40-character USDC representation.
 - `ledger_direct_xrpl_tx`, `ledger_direct_xrpl_destination_tag` — naming convention
   `ledger_direct_{chain}_{entity}`.
 - Unique index on `hash`.
+- `destination_tag` is an **unsigned 32-bit integer** column — XRPL's DestinationTag field's true
+  range is `0`–`4294967295`. Ground truth's MySQL schema uses a *signed* `INT`, capping usable
+  values at `2147483647`; the core's `DestinationTagService` generates across the full unsigned
+  range, so a signed column would silently truncate/reject values above that. Not an XRPL protocol
+  constraint — a schema choice the core corrects.
 - The core defines the **schema** (SQL/DDL as a constant or migration template); the platform
   creates it through its own DB layer.
 
