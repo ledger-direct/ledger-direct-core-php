@@ -19,18 +19,24 @@ use Hardcastle\LedgerDirect\Core\Xrpl\XrplTransaction;
  */
 interface TransactionRepositoryInterface
 {
-    public function isDestinationTagReserved(int $destinationTag): bool;
+    /**
+     * Reservation is scoped per $destinationAccount, not global — matches
+     * how findTransaction() below already matches per-account, and means a
+     * merchant rotating their destination address doesn't permanently
+     * shrink a shared global pool.
+     */
+    public function isDestinationTagReserved(string $destinationAccount, int $destinationTag): bool;
 
     /**
      * Called only after DestinationTagService has checked
      * isDestinationTagReserved() itself — check-then-reserve, not atomic.
-     * Two concurrent calls can both pass that check for the same tag before
-     * either reserves it; a real but very-low-probability race given the
-     * ~4.29 billion-value range and that a reservation is a single fast
-     * write. Known and accepted, not fixed by redesigning this into a
-     * reserve-or-throw contract.
+     * Two concurrent calls can both pass that check for the same
+     * (account, tag) pair before either reserves it; a real but
+     * very-low-probability race given the ~4.29 billion-value range and
+     * that a reservation is a single fast write. Known and accepted, not
+     * fixed by redesigning this into a reserve-or-throw contract.
      */
-    public function reserveDestinationTag(int $destinationTag): void;
+    public function reserveDestinationTag(string $destinationAccount, int $destinationTag): void;
 
     /**
      * @param string[] $hashes

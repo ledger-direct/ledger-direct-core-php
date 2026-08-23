@@ -27,26 +27,28 @@ final class DestinationTagService
     }
 
     /**
-     * Picks a random, currently-unreserved destination tag and reserves it.
+     * Picks a random, currently-unreserved destination tag for
+     * $destinationAccount and reserves it. Reservation is scoped per
+     * account — see TransactionRepositoryInterface.
      *
      * Check-then-reserve, not atomic — see TransactionRepositoryInterface's
      * docblock for the residual (very low probability, given the range)
-     * race between two concurrent calls.
+     * race between two concurrent calls for the same account.
      */
-    public function generateDestinationTag(): int
+    public function generateDestinationTag(string $destinationAccount): int
     {
         for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
             $candidate = random_int(self::RANGE_MIN, self::RANGE_MAX);
 
-            if (!$this->transactionRepository->isDestinationTagReserved($candidate)) {
-                $this->transactionRepository->reserveDestinationTag($candidate);
+            if (!$this->transactionRepository->isDestinationTagReserved($destinationAccount, $candidate)) {
+                $this->transactionRepository->reserveDestinationTag($destinationAccount, $candidate);
 
                 return $candidate;
             }
         }
 
         throw new DestinationTagsExhaustedException(
-            'Could not find a free destination tag after ' . self::MAX_ATTEMPTS . ' attempts.'
+            "Could not find a free destination tag for {$destinationAccount} after " . self::MAX_ATTEMPTS . ' attempts.'
         );
     }
 }

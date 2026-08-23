@@ -19,14 +19,14 @@ use LogicException;
  */
 final class InMemoryTransactionRepository implements TransactionRepositoryInterface
 {
-    /** @var array<int, true> */
+    /** @var array<string, array<int, true>> */
     private array $reservedDestinationTags = [];
 
     private bool $reserveEverything = false;
 
     private int $rejectNextCalls = 0;
 
-    public function isDestinationTagReserved(int $destinationTag): bool
+    public function isDestinationTagReserved(string $destinationAccount, int $destinationTag): bool
     {
         if ($this->reserveEverything) {
             return true;
@@ -38,12 +38,12 @@ final class InMemoryTransactionRepository implements TransactionRepositoryInterf
             return true;
         }
 
-        return isset($this->reservedDestinationTags[$destinationTag]);
+        return isset($this->reservedDestinationTags[$destinationAccount][$destinationTag]);
     }
 
-    public function reserveDestinationTag(int $destinationTag): void
+    public function reserveDestinationTag(string $destinationAccount, int $destinationTag): void
     {
-        $this->reservedDestinationTags[$destinationTag] = true;
+        $this->reservedDestinationTags[$destinationAccount][$destinationTag] = true;
     }
 
     /**

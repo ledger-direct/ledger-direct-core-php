@@ -90,6 +90,9 @@ currency code is still the 40-character USDC representation.
   values at `2147483647`; the core's `DestinationTagService` generates across the full unsigned
   range, so a signed column would silently truncate/reject values above that. Not an XRPL protocol
   constraint — a schema choice the core corrects.
+- `ledger_direct_xrpl_destination_tag` also carries a `destination_account` column — reservation is
+  scoped per destination account, not global (ground truth scopes it globally); primary key is the
+  pair `(destination_account, destination_tag)`, not `destination_tag` alone.
 - The core defines the **schema** (SQL/DDL as a constant or migration template); the platform
   creates it through its own DB layer.
 
