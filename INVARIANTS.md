@@ -44,7 +44,7 @@ Field names are literal and identical across all plugins:
 | `expiry` | |
 | `hash` | See [Tables](#tables) — unique per transaction. |
 | `ctid` | XRPL Compact Transaction ID — unlike `hash`, self-describing (encodes ledger index, transaction index, network id), so it disambiguates across networks. Set alongside `hash` once the payment is fulfilled; used to verify the transaction actually went through. **XRPL-specific, not a general blockchain concept** — optional/nullable so a future non-`XRPL` `chain` can fulfill without it. |
-| `amount_paid` / `delivered_amount` | |
+| `amount_paid` / `delivered_amount` | Same shape rule as `amount_requested` — **decoded**, not the raw ledger encoding: see [Amount encoding](#amount-encoding-on-xrpl). |
 
 ## Conversion & rounding
 
@@ -52,6 +52,26 @@ Field names are literal and identical across all plugins:
 - **USD-peg fast path:** `exchange_rate = 1.0` when `quote === 'USD'` and the asset is RLUSD or
   USDC (no oracle call). **XRP never** takes the fast path — it always goes through the oracle set.
 - Rounding: stablecoins → 2 decimal places, XRP → 5 decimal places.
+
+## Amount encoding on XRPL
+
+The ledger's wire encoding is **not** the record's shape, and the core owns the translation:
+
+| | On the wire (e.g. `meta.delivered_amount`) | In a `PaymentIntent` |
+|---|---|---|
+| XRP | integer string of **drops**, e.g. `"15063780"` (1 XRP = 1,000,000 drops) | float, e.g. `15.06378` |
+| Issued currency | `{currency, value, issuer}` | same object |
+
+- `XrplAmount::dropsToXrp()` / `xrpToDrops()` are exact (via `brick/math`); sub-drop amounts are
+  **rejected**, never rounded. `XrplAmount::decode()` takes either wire form and returns the
+  record shape.
+- `XrplTransaction::getDeliveredAmount()` reads `delivered_amount` (or the raw `DeliveredAmount`)
+  and returns it already decoded — feed it straight into `PaymentIntent::withFulfillment()`.
+- Credit an order **only** from `delivered_amount`. On a partial payment the transaction's own
+  `Amount` is what the sender asked to deliver, not what arrived.
+- `null` means the transaction delivered nothing measurable (it isn't a Payment). The ledger's
+  literal `"unavailable"` is **not** null and is refused: money arrived, the amount is unknowable.
+- **This is ledger encoding, not a platform detail** — no adapter reimplements it.
 
 ## StablecoinRegistry — security-critical
 
@@ -83,7 +103,12 @@ currency code is still the 40-character USDC representation.
 ## Tables
 
 - `ledger_direct_xrpl_tx`, `ledger_direct_xrpl_destination_tag` — naming convention
-  `ledger_direct_{chain}_{entity}`.
+  `ledger_direct_{chain}_{entity}`. These are **logical/base** names; each platform adapter
+  **prepends its own table prefix**: WooCommerce `$wpdb->prefix` (e.g. `wp_`), PrestaShop
+  `_DB_PREFIX_` (e.g. `ps_`), Magento its configured `db/table_prefix`; Shopware none. The core
+  never references a physical table name — persistence lives entirely behind
+  `XrplTransactionRepositoryInterface`, so applying the prefix is 100% the adapter's concern and
+  nothing needs to be injected into the core.
 - Unique index on `hash`.
 - `destination_tag` values are **unsigned 32-bit integers** — XRPL's DestinationTag field's true
   range is `0`–`4294967295`. Ground truth's MySQL schema uses a *signed* `INT`, capping usable
