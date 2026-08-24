@@ -53,6 +53,33 @@ Field names are literal and identical across all plugins:
   USDC (no oracle call). **XRP never** takes the fast path — it always goes through the oracle set.
 - Rounding: stablecoins → 2 decimal places, XRP → 5 decimal places.
 
+## Rate caching
+
+Optional, and **off entirely** unless a PSR-16 cache is injected into `PriceService` — without one
+the service behaves exactly as it did before caching existed. The core stores nothing itself; where
+the bytes land is the platform's business, as with `XrplTransactionRepositoryInterface`.
+
+- **Only the exchange rate is cached, never a `PriceQuote`.** The amount depends on the order
+  total; the rate does not.
+- **Failures are never cached** — a cached failure would block checkout.
+- Two tiers, both derived from `freshTtlSeconds` (default **60 s**, constructor argument):
+  - **Fresh** (age ≤ TTL): served without an oracle call.
+  - **Stale-while-error** (TTL < age ≤ TTL × 5): served *only* when every oracle just failed, with
+    a PSR-3 warning. Beyond that horizon, `PriceUnavailableException` as before. This is the point
+    of the feature: a single oracle hiccup must not make the payment method vanish mid-checkout.
+- A quote may therefore rest on a rate up to `freshTtl` old — and up to `freshTtl × 5` during an
+  oracle outage.
+- The entry is written with the **stale horizon** as its PSR-16 TTL and carries its own
+  `fetched_at`: PSR-16 cannot return an expired value, so freshness has to live inside the value.
+- Key: `ledger-direct.rate.v1.{network}.{BASE}.{QUOTE}` — the network **must** be in the key or
+  mainnet and testnet collide; `v1` allows invalidating every entry at once if the oracle set
+  changes. Dots are PSR-16-legal; `{}()/\@:` are reserved.
+- **A broken cache must never take checkout down.** Read/write failures are caught and logged; an
+  unreachable backend degrades to "no cache", not to "no payment". A malformed or foreign value
+  under the same key reads as a miss.
+- The fulfillment side (`delivered_amount`, matching, `withFulfillment()`) is untouched by any of
+  this.
+
 ## Amount encoding on XRPL
 
 The ledger's wire encoding is **not** the record's shape, and the core owns the translation:

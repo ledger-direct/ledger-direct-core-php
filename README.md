@@ -4,8 +4,9 @@ Platform-agnostic PHP core for LedgerDirect: the XRPL/commerce logic (price conv
 stablecoin registry, transaction sync) shared across every LedgerDirect plugin.
 
 Composer package: `hardcastle/ledger-direct-core`. No framework dependency, no concrete Guzzle, no
-`xrpl_php`. Depends only on the PSR interfaces (`psr/http-client`, `psr/http-factory`, `psr/log`)
-plus `brick/math` for exact decimal arithmetic — pure PHP, no required extensions.
+`xrpl_php`. Depends only on the PSR interfaces (`psr/http-client`, `psr/http-factory`, `psr/log`,
+`psr/simple-cache`) plus `brick/math` for exact decimal arithmetic — pure PHP, no required
+extensions.
 
 The contract this package guarantees — metadata field shapes, conversion/rounding rules, the
 stablecoin registry, the oracle set, table naming — is defined in [`INVARIANTS.md`](INVARIANTS.md)
