@@ -53,6 +53,25 @@ Field names are literal and identical across all plugins:
   USDC (no oracle call). **XRP never** takes the fast path — it always goes through the oracle set.
 - Rounding: stablecoins → 2 decimal places, XRP → 5 decimal places.
 
+## Settlement
+
+Whether a delivered amount pays for a quote is a core decision (`Core\Payment\SettlementPolicy`),
+not a per-plugin one: every platform must call an order paid under exactly the same conditions.
+
+- A `PaymentIntent` without `amount_paid` is never settled.
+- **Native asset** (e.g. XRP): settled when `amount_paid >= amount_requested × (1 − tolerance)`. The
+  default tolerance is **0.15 %** (`0.0015`) — the quote is a float rounded to five places and wallets
+  may shave rounding on their side. A platform may pass a different tolerance (`0 ≤ t < 1`) from its
+  configuration; it must not implement its own comparison.
+- **Issued currency** (e.g. RLUSD, USDC, a merchant token): settled only when `currency` **and**
+  `issuer` equal the quoted ones **and** `value >= requested value`, compared as exact decimals. There
+  is no tolerance: values are decimal strings, not floats. A same-named token from another issuer is
+  a different asset and never settles the order, whatever it is called.
+- Overpayment settles. What to do with the surplus is the platform's business.
+- `SettlementPolicy::shortfall()` reports what is still missing as a decimal string (null once
+  settled) — the number a payment page shows as "X of Y received".
+- What "paid" *does* on the platform — invoice, order status, emails — is the adapter's concern.
+
 ## Rate caching
 
 Optional, and **off entirely** unless a PSR-16 cache is injected into `PriceService` — without one
