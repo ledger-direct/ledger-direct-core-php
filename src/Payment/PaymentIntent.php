@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Payment;
 
+use Brick\Math\BigDecimal;
 use InvalidArgumentException;
 
 /**
@@ -124,6 +125,49 @@ final readonly class PaymentIntent
             ctid: $ctid,
             amountPaid: $amountPaid,
         );
+    }
+
+    /**
+     * The requested amount as a plain decimal string, whatever its shape - the number a
+     * customer is asked to send, without the issuer/currency envelope of an issued currency.
+     */
+    public function amountRequestedValue(): string
+    {
+        return self::plainValue($this->amountRequested);
+    }
+
+    /**
+     * The delivered amount as a plain decimal string, or null while nothing has arrived.
+     */
+    public function amountPaidValue(): ?string
+    {
+        return $this->amountPaid === null ? null : self::plainValue($this->amountPaid);
+    }
+
+    /**
+     * @param float|array{currency: string, value: string, issuer: string} $amount
+     */
+    private static function plainValue(float|array $amount): string
+    {
+        if (is_array($amount)) {
+            return (string) $amount['value'];
+        }
+
+        return self::plainDecimal(BigDecimal::of((string) $amount));
+    }
+
+    /**
+     * A decimal without exponent notation or trailing fraction zeros ("100", "0.84", "0.000001").
+     * Done on the string rather than via BigDecimal::stripTrailingZeros(), which not every
+     * brick/math release in the supported range provides.
+     *
+     * @internal shared with SettlementPolicy
+     */
+    public static function plainDecimal(BigDecimal $value): string
+    {
+        $plain = (string) $value;
+
+        return str_contains($plain, '.') ? rtrim(rtrim($plain, '0'), '.') : $plain;
     }
 
     /**
