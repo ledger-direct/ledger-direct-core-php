@@ -49,6 +49,31 @@ final class PriceService
     }
 
     /**
+     * brick/math renamed its RoundingMode cases from SCREAMING_SNAKE to
+     * PascalCase in 0.15.0 — `HALF_UP` became `HalfUp`, with no alias
+     * (an enum case cannot have one). Resolving the case by name is what
+     * lets the constraint span 0.12–0.20 instead of pinning one 0.x minor.
+     *
+     * That span is not cosmetic: this package gets bundled into a shop's
+     * vendor/, so a narrow pin drags the whole installation onto our
+     * version — and a shop forced down to 0.12 fatals anywhere *its own*
+     * code uses the PascalCase cases. A library must not pick the app's
+     * brick/math.
+     */
+    private static function halfUp(): RoundingMode
+    {
+        static $mode = null;
+
+        if ($mode === null) {
+            $name = defined(RoundingMode::class . '::HalfUp') ? 'HalfUp' : 'HALF_UP';
+            /** @var RoundingMode $mode */
+            $mode = constant(RoundingMode::class . '::' . $name);
+        }
+
+        return $mode;
+    }
+
+    /**
      * Fills the quote fragment of a payment — asset, currency, pairing,
      * rate, requested amount. Has no destination-account/tag inputs, so it
      * cannot build a full PaymentIntent by itself; see INVARIANTS.md.
@@ -64,7 +89,7 @@ final class PriceService
         $exchangeRate = $this->exchangeRate($provider, $baseAsset, $quoteCurrency, $network);
 
         $amount = BigDecimal::of((string) $total)
-            ->dividedBy((string) $exchangeRate, $roundPlaces, RoundingMode::HALF_UP);
+            ->dividedBy((string) $exchangeRate, $roundPlaces, self::halfUp());
 
         $amountRequested = match ($baseAsset) {
             XrpPriceProvider::CRYPTO_CODE => $amount->toFloat(),

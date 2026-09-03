@@ -35,6 +35,27 @@ final class PriceServiceTest extends TestCase
         self::assertEqualsWithDelta(33.33333, $quote->amountRequested, 0.000001);
     }
 
+    /**
+     * 0.987652 / 8 = 0.1234565 exactly — the only quote in this suite whose
+     * discarded digit is a bare 5, so the only one that can tell HALF_UP
+     * apart from DOWN. Not academic: PriceService resolves the rounding mode
+     * by case name to span brick/math's 0.15 rename, and a resolver that
+     * picked the wrong case would leave every other assertion here green.
+     */
+    public function testXrpQuoteRoundsHalfUpRatherThanDown(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('api.binance.com', new Response(200, [], '{"price":"8"}'));
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"ripple":{"usd":8}}'));
+        $client->queueResponse('api.kraken.com', new Response(200, [], '{"result":{"XXRPZUSD":{"c":["8","100"]}}}'));
+
+        $service = new PriceService($client, new HttpFactory(), new RecordingLogger());
+
+        $quote = $service->getCryptoPriceForOrder(0.987652, 'USD', 'XRP', 'testnet');
+
+        self::assertEqualsWithDelta(0.12346, $quote->amountRequested, 0.000001);
+    }
+
     public function testRlusdAmountKeepsTrailingZerosAtTwoDecimalPlaces(): void
     {
         $client = new FakeHttpClient();
