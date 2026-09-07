@@ -10,5 +10,8 @@
 # Session learnings/design musings (local scratchpad, not part of the public contract)
 /MUSINGS.md
 
-# Handover documents from the adapter projects (working input, not public contract)
-/LedgerDirect-*-Uebergabe.md
+# Handover documents from the adapter projects (working input, not public contract).
+# Matches the whole LedgerDirect-*.md family, not just *-Uebergabe.md: a handover
+# named anything else slipped past the narrower pattern once and shipped inside a
+# release tarball. Nothing the package publishes is named LedgerDirect-*.md.
+/LedgerDirect-*.md

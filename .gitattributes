@@ -3,3 +3,4 @@
 /.github            export-ignore
 /docker-compose.yml export-ignore
 /phpunit.xml.dist   export-ignore
+/LedgerDirect-*.md  export-ignore
