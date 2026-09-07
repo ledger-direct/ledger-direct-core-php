@@ -12,6 +12,7 @@ use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncService;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplClient;
+use Hardcastle\LedgerDirect\Core\Xrpl\XrplRpcException;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplTransaction;
 use PHPUnit\Framework\TestCase;
 
@@ -85,6 +86,124 @@ final class SyncServiceTest extends TestCase
 
         $sentBody = json_decode((string) $client->lastRequest()?->getBody(), true);
         self::assertSame(501, $sentBody['params'][0]['ledger_index_min']);
+    }
+
+    /**
+     * A single mainnet row (ledger index ~100 million) used to pin the
+     * global cursor above every testnet ledger, so the testnet sync asked
+     * for a range that does not exist and silently returned nothing —
+     * permanently, with no way out but editing the database.
+     */
+    public function testTheCursorIgnoresRowsFromAnotherNetwork(): void
+    {
+        [$client, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->hydrated(hash: 'HASH_MAINNET', ledgerIndex: '100000000', network: 'mainnet'),
+            $this->hydrated(hash: 'HASH_TESTNET', ledgerIndex: '500', network: 'testnet'),
+        ]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $sentBody = json_decode((string) $client->lastRequest()?->getBody(), true);
+        self::assertSame(501, $sentBody['params'][0]['ledger_index_min']);
+    }
+
+    public function testTheCursorIgnoresRowsForAnotherDestinationAccount(): void
+    {
+        [$client, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->hydrated(hash: 'HASH_OTHER_ACCOUNT', ledgerIndex: '900000', destination: 'rPreviousAddress'),
+            $this->hydrated(hash: 'HASH_OURS', ledgerIndex: '500'),
+        ]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $sentBody = json_decode((string) $client->lastRequest()?->getBody(), true);
+        self::assertSame(501, $sentBody['params'][0]['ledger_index_min']);
+    }
+
+    /**
+     * The testnet reset case. Rows from the previous epoch sat at ledger
+     * index ~45 million while the live testnet was back at ~20.5 million,
+     * so every sync failed with lgrIdxsInvalid — for every order, forever,
+     * until the rows were deleted by hand.
+     */
+    public function testRecoversFromATestnetResetByResyncingWithoutACursor(): void
+    {
+        [$client, $repository, $service, $logger] = $this->makeService();
+
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_STALE_EPOCH', ledgerIndex: '45000000')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([
+            $this->rawTx(hash: 'HASH_AFTER_RESET', account: 'rSender', destination: self::OWN_ADDRESS),
+        ]));
+
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $requests = $client->sentRequests();
+        self::assertCount(2, $requests);
+
+        $first = json_decode((string) $requests[0]->getBody(), true);
+        self::assertSame(45000001, $first['params'][0]['ledger_index_min']);
+
+        $retry = json_decode((string) $requests[1]->getBody(), true);
+        self::assertArrayNotHasKey('ledger_index_min', $retry['params'][0]);
+
+        $hashes = array_map(static fn (XrplTransaction $t): string => $t->hash, $repository->storedTransactions());
+        self::assertContains('HASH_AFTER_RESET', $hashes);
+        self::assertSame('warning', $logger->records()[0]['level']);
+    }
+
+    public function testAnRpcErrorThatIsNotAStaleCursorStillPropagates(): void
+    {
+        [$client, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_OLD', ledgerIndex: '500')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('actNotFound'));
+
+        $this->expectException(XrplRpcException::class);
+
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+    }
+
+    /**
+     * Without a cursor there is nothing to recover *from*: retrying the
+     * identical call would fail identically, so the error must surface
+     * rather than double every failing sync.
+     */
+    public function testAStaleCursorErrorWithoutACursorIsNotRetried(): void
+    {
+        [$client, , $service] = $this->makeService();
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+
+        try {
+            $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+            self::fail('Expected XrplRpcException.');
+        } catch (XrplRpcException) {
+            self::assertCount(1, $client->sentRequests());
+        }
+    }
+
+    public function testSyncedTransactionsRecordTheNetworkTheyCameFrom(): void
+    {
+        [$client, $repository, $service] = $this->makeService();
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([
+            $this->rawTx(hash: 'HASH_IN', account: 'rSender', destination: self::OWN_ADDRESS),
+        ]));
+
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        self::assertSame('testnet', $repository->storedTransactions()[0]->network);
     }
 
     public function testSkipsAMalformedEntryAndLogsAWarningWithoutLosingTheRest(): void
@@ -308,6 +427,16 @@ final class SyncServiceTest extends TestCase
         ]));
     }
 
+    private function accountTxErrorResponse(string $error): Response
+    {
+        return new Response(200, [], json_encode([
+            'result' => [
+                'status' => 'error',
+                'error' => $error,
+            ],
+        ]));
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -336,8 +465,10 @@ final class SyncServiceTest extends TestCase
         string $destination = self::OWN_ADDRESS,
         ?int $destinationTag = null,
         array $meta = [],
+        string $network = 'testnet',
     ): XrplTransaction {
         return new XrplTransaction(
+            network: $network,
             ledgerIndex: $ledgerIndex,
             hash: $hash,
             ctid: 'C0000000000000000000000',

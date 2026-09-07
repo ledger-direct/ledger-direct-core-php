@@ -19,6 +19,14 @@ use Psr\Http\Message\StreamFactoryInterface;
  */
 final class XrplClient
 {
+    /**
+     * rippled's error when the requested ledger range isn't one it can
+     * serve — in practice, a stored cursor pointing past the network's
+     * current ledger. The testnet is periodically reset, which rewinds its
+     * ledger index and strands every cursor from the previous epoch.
+     */
+    public const ERROR_LEDGER_INDEXES_INVALID = 'lgrIdxsInvalid';
+
     private const JSON_RPC_URLS = [
         'mainnet' => 'https://xrplcluster.com/',
         'testnet' => 'https://s.altnet.rippletest.net:51234/',
@@ -57,8 +65,11 @@ final class XrplClient
         $result = $this->callRpc($network, 'account_tx', $params);
 
         if (($result['status'] ?? null) === 'error') {
+            $error = isset($result['error']) ? (string) $result['error'] : null;
+
             throw new XrplRpcException(
-                "XRPL account_tx on {$network} failed: " . ($result['error'] ?? 'unknown error') . '.'
+                "XRPL account_tx on {$network} failed: " . ($error ?? 'unknown error') . '.',
+                error: $error,
             );
         }
 
@@ -85,8 +96,11 @@ final class XrplClient
                 return null;
             }
 
+            $error = isset($result['error']) ? (string) $result['error'] : null;
+
             throw new XrplRpcException(
-                "XRPL tx on {$network} failed: " . ($result['error'] ?? 'unknown error') . '.'
+                "XRPL tx on {$network} failed: " . ($error ?? 'unknown error') . '.',
+                error: $error,
             );
         }
 

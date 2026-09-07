@@ -35,9 +35,50 @@ final class SyncService
      */
     public function syncTransactions(string $address, string $network): void
     {
-        $lastSyncedLedgerIndex = $this->transactionRepository->getLastSyncedLedgerIndex();
+        $lastSyncedLedgerIndex = $this->transactionRepository->getLastSyncedLedgerIndex($address, $network);
         $afterLedgerIndex = $lastSyncedLedgerIndex !== null ? (int) $lastSyncedLedgerIndex : null;
 
+        try {
+            $this->syncFrom($address, $network, $afterLedgerIndex);
+        } catch (XrplRpcException $exception) {
+            /*
+             * The testnet is reset periodically, which rewinds its ledger
+             * index. Rows from the previous epoch then sit far above the
+             * live ledger, the cursor built from them is unservable, and
+             * rippled answers lgrIdxsInvalid — for every order, forever,
+             * until somebody deletes rows by hand. Recover by doing the one
+             * thing that is guaranteed to be servable: ask again with no
+             * cursor. findExistingHashes() already keeps that from
+             * duplicating anything.
+             *
+             * Only retried when a cursor was actually sent; without one,
+             * lgrIdxsInvalid means something else entirely and retrying the
+             * identical call would just fail the same way.
+             */
+            if ($afterLedgerIndex === null || $exception->error !== XrplClient::ERROR_LEDGER_INDEXES_INVALID) {
+                throw $exception;
+            }
+
+            $this->logger->warning(
+                'LedgerDirect: stored ledger cursor is ahead of the network, resyncing without one',
+                [
+                    'address' => $address,
+                    'network' => $network,
+                    'cursor' => $afterLedgerIndex,
+                ],
+            );
+
+            $this->syncFrom($address, $network, null);
+        }
+    }
+
+    /**
+     * One pass of the paginated fetch-and-store loop, capped at MAX_PAGES —
+     * the same safety-guard shape used elsewhere in the core for an
+     * otherwise-open-ended loop against external/injected dependencies.
+     */
+    private function syncFrom(string $address, string $network, ?int $afterLedgerIndex): void
+    {
         $marker = null;
         $pages = 0;
 
@@ -45,7 +86,7 @@ final class SyncService
             $page = $this->xrplClient->fetchAccountTransactions($address, $network, $afterLedgerIndex, $marker);
 
             if ($page['transactions'] !== []) {
-                $this->storeIncomingNewTransactions($page['transactions'], $address);
+                $this->storeIncomingNewTransactions($page['transactions'], $address, $network);
             }
 
             $marker = $page['marker'];
@@ -139,7 +180,7 @@ final class SyncService
     /**
      * @param array<int, array<string, mixed>> $rawTransactions
      */
-    private function storeIncomingNewTransactions(array $rawTransactions, string $ownAddress): void
+    private function storeIncomingNewTransactions(array $rawTransactions, string $ownAddress, string $network): void
     {
         $incoming = array_values(array_filter(
             $rawTransactions,
@@ -165,7 +206,7 @@ final class SyncService
         $hydrated = [];
         foreach ($new as $raw) {
             try {
-                $hydrated[] = self::hydrate($raw);
+                $hydrated[] = self::hydrate($raw, $network);
             } catch (Throwable $exception) {
                 $this->logger->warning('LedgerDirect: skipping malformed synced transaction', [
                     'hash' => $raw['tx']['hash'] ?? null,
@@ -182,7 +223,7 @@ final class SyncService
     /**
      * @param array<string, mixed> $raw
      */
-    private static function hydrate(array $raw): XrplTransaction
+    private static function hydrate(array $raw, string $network): XrplTransaction
     {
         $tx = $raw['tx'] ?? throw new UnexpectedValueException("Missing 'tx' in synced transaction.");
 
@@ -193,6 +234,7 @@ final class SyncService
         }
 
         return new XrplTransaction(
+            network: $network,
             ledgerIndex: (string) $tx['ledger_index'],
             hash: (string) $tx['hash'],
             ctid: (string) $tx['ctid'],

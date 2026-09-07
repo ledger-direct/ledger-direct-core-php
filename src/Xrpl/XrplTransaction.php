@@ -19,6 +19,14 @@ final readonly class XrplTransaction
      * @param array<string, mixed> $tx
      */
     public function __construct(
+        /**
+         * 'mainnet' | 'testnet'. Stored rather than derived: the ledger
+         * index only means anything within one network, so the sync cursor
+         * has to be scoped by it. The CTID does encode a network id, but
+         * parsing it back out to answer "which network was this" is far
+         * more work than a column.
+         */
+        public string $network,
         public string $ledgerIndex,
         public string $hash,
         public string $ctid,

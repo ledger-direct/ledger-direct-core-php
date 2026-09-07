@@ -93,9 +93,25 @@ interface XrplTransactionRepositoryInterface
     public function findTransactions(string $destination, int $destinationTag): array;
 
     /**
-     * @return string|null the highest synced ledger_index, or null if none synced yet
+     * The highest `ledger_index` stored for this destination account **on
+     * this network** — `WHERE destination = ? AND network = ?` — or null
+     * when nothing has been synced for that pair yet. SyncService turns it
+     * into `ledger_index_min` so a sync doesn't re-paginate the account's
+     * whole history.
+     *
+     * Both parameters are load-bearing, and a global `MAX(ledger_index)` is
+     * not a valid implementation:
+     *
+     * - **Per network**, because a ledger index only means anything within
+     *   one network. One mainnet row (index ~100 million) otherwise pins
+     *   the cursor above every testnet ledger and the testnet sync silently
+     *   returns nothing forever, with no way back except editing the
+     *   database.
+     * - **Per account**, because a merchant who switches receiving accounts
+     *   would otherwise start the new account's sync at the old one's
+     *   cursor and never see anything that happened before it.
      */
-    public function getLastSyncedLedgerIndex(): ?string;
+    public function getLastSyncedLedgerIndex(string $destinationAccount, string $network): ?string;
 
     public function truncate(): void;
 }
