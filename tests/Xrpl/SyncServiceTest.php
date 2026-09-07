@@ -8,6 +8,7 @@ use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryXrplTransactionRepository;
+use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncService;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplClient;
@@ -17,6 +18,10 @@ use PHPUnit\Framework\TestCase;
 final class SyncServiceTest extends TestCase
 {
     private const OWN_ADDRESS = 'rOwnAddress';
+
+    private const RLUSD_CURRENCY = '524C555344000000000000000000000000000000';
+
+    private const RLUSD_ISSUER = 'rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV';
 
     public function testSyncStoresOnlyIncomingTransactions(): void
     {
@@ -99,16 +104,177 @@ final class SyncServiceTest extends TestCase
         self::assertSame('warning', $logger->records()[0]['level']);
     }
 
-    public function testFindTransactionDelegatesToTheRepository(): void
+    public function testFindTransactionsReturnsEveryCandidateNewestFirst(): void
     {
         [, $repository, $service] = $this->makeService();
 
         $repository->saveTransactions([
-            $this->hydrated(hash: 'HASH_MATCH', ledgerIndex: '1', destination: 'rDest', destinationTag: 123),
+            $this->hydrated(hash: 'HASH_OLD', ledgerIndex: '100', destination: 'rDest', destinationTag: 123),
+            $this->hydrated(hash: 'HASH_NEW', ledgerIndex: '900', destination: 'rDest', destinationTag: 123),
+            $this->hydrated(hash: 'HASH_OTHER_TAG', ledgerIndex: '950', destination: 'rDest', destinationTag: 999),
         ]);
 
-        self::assertSame('HASH_MATCH', $service->findTransaction('rDest', 123)?->hash);
-        self::assertNull($service->findTransaction('rDest', 999));
+        $hashes = array_map(
+            static fn (XrplTransaction $t): string => $t->hash,
+            $service->findTransactions('rDest', 123),
+        );
+
+        self::assertSame(['HASH_NEW', 'HASH_OLD'], $hashes);
+        self::assertSame([], $service->findTransactions('rDest', 4242));
+    }
+
+    /**
+     * WooCommerce order #135: an old RLUSD payment sat on the tag an XRP
+     * order was quoted against. Taking "the first" candidate handed an
+     * issued-currency amount to a native-asset intent, withFulfillment()
+     * threw, and the order stayed open forever — with the real XRP payment
+     * present and never looked at.
+     */
+    public function testFindTransactionForSkipsTheOtherAssetClassAndPicksTheRealPayment(): void
+    {
+        [, $repository, $service, $logger] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->hydrated(
+                hash: 'HASH_STRAY_RLUSD',
+                ledgerIndex: '900',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => [
+                    'currency' => self::RLUSD_CURRENCY,
+                    'value' => '10.00',
+                    'issuer' => self::RLUSD_ISSUER,
+                ]],
+            ),
+            $this->hydrated(
+                hash: 'HASH_REAL_XRP',
+                ledgerIndex: '800',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => '827440'],
+            ),
+        ]);
+
+        $found = $service->findTransactionFor($this->xrpIntent());
+
+        self::assertSame('HASH_REAL_XRP', $found?->hash);
+        self::assertSame('warning', $logger->records()[0]['level']);
+    }
+
+    public function testFindTransactionForPrefersTheNewestCandidateOfTheQuotedClass(): void
+    {
+        [, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->hydrated(
+                hash: 'HASH_EARLIER',
+                ledgerIndex: '700',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => '100000'],
+            ),
+            $this->hydrated(
+                hash: 'HASH_LATER',
+                ledgerIndex: '800',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => '827440'],
+            ),
+        ]);
+
+        self::assertSame('HASH_LATER', $service->findTransactionFor($this->xrpIntent())?->hash);
+    }
+
+    public function testFindTransactionForReturnsNullWhenOnlyTheWrongAssetClassIsPresent(): void
+    {
+        [, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->hydrated(
+                hash: 'HASH_STRAY_RLUSD',
+                ledgerIndex: '900',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => [
+                    'currency' => self::RLUSD_CURRENCY,
+                    'value' => '10.00',
+                    'issuer' => self::RLUSD_ISSUER,
+                ]],
+            ),
+        ]);
+
+        self::assertNull($service->findTransactionFor($this->xrpIntent()));
+    }
+
+    /**
+     * A wrong-issuer token is a real payment attempt on this order, not
+     * noise: SettlementPolicy is what declares it non-settling, so the
+     * platform can tell the customer their token was wrong. Skipping it
+     * here would show them nothing at all.
+     */
+    public function testFindTransactionForKeepsAWrongIssuerCandidateForSettlementPolicy(): void
+    {
+        [, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->hydrated(
+                hash: 'HASH_WRONG_ISSUER',
+                ledgerIndex: '900',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => [
+                    'currency' => self::RLUSD_CURRENCY,
+                    'value' => '10.00',
+                    'issuer' => 'rImpostorIssuerAddress',
+                ]],
+            ),
+        ]);
+
+        self::assertSame('HASH_WRONG_ISSUER', $service->findTransactionFor($this->rlusdIntent())?->hash);
+    }
+
+    public function testFindTransactionForSkipsAnUnreadableDeliveredAmountRatherThanAborting(): void
+    {
+        [, $repository, $service, $logger] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->hydrated(
+                hash: 'HASH_UNAVAILABLE',
+                ledgerIndex: '900',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => 'unavailable'],
+            ),
+            $this->hydrated(
+                hash: 'HASH_REAL_XRP',
+                ledgerIndex: '800',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => '827440'],
+            ),
+        ]);
+
+        self::assertSame('HASH_REAL_XRP', $service->findTransactionFor($this->xrpIntent())?->hash);
+        self::assertSame('warning', $logger->records()[0]['level']);
+    }
+
+    public function testFindTransactionForSkipsATransactionThatDeliveredNothing(): void
+    {
+        [, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            // An EscrowCreate carries a Destination and lands in the same table.
+            $this->hydrated(hash: 'HASH_ESCROW', ledgerIndex: '900', destination: 'rDest', destinationTag: 114729),
+            $this->hydrated(
+                hash: 'HASH_REAL_XRP',
+                ledgerIndex: '800',
+                destination: 'rDest',
+                destinationTag: 114729,
+                meta: ['delivered_amount' => '827440'],
+            ),
+        ]);
+
+        self::assertSame('HASH_REAL_XRP', $service->findTransactionFor($this->xrpIntent())?->hash);
     }
 
     /**
@@ -161,11 +327,15 @@ final class SyncServiceTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $meta
+     */
     private function hydrated(
         string $hash,
         string $ledgerIndex,
         string $destination = self::OWN_ADDRESS,
         ?int $destinationTag = null,
+        array $meta = [],
     ): XrplTransaction {
         return new XrplTransaction(
             ledgerIndex: $ledgerIndex,
@@ -175,8 +345,44 @@ final class SyncServiceTest extends TestCase
             destination: $destination,
             destinationTag: $destinationTag,
             date: 800000000,
-            meta: [],
+            meta: $meta,
             tx: [],
+        );
+    }
+
+    private function xrpIntent(): PaymentIntent
+    {
+        return PaymentIntent::quote(
+            type: 'xrp-payment',
+            chain: 'XRPL',
+            network: 'testnet',
+            baseAsset: 'XRP',
+            quoteCurrency: 'EUR',
+            pairing: 'XRP/EUR',
+            exchangeRate: 2.0,
+            amountRequested: 0.82744,
+            destinationAccount: 'rDest',
+            destinationTag: 114729,
+        );
+    }
+
+    private function rlusdIntent(): PaymentIntent
+    {
+        return PaymentIntent::quote(
+            type: 'rlusd-payment',
+            chain: 'XRPL',
+            network: 'testnet',
+            baseAsset: 'RLUSD',
+            quoteCurrency: 'USD',
+            pairing: 'RLUSD/USD',
+            exchangeRate: 1.0,
+            amountRequested: [
+                'currency' => self::RLUSD_CURRENCY,
+                'value' => '10.00',
+                'issuer' => self::RLUSD_ISSUER,
+            ],
+            destinationAccount: 'rDest',
+            destinationTag: 114729,
         );
     }
 }

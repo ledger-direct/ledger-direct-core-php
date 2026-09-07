@@ -88,16 +88,19 @@ final class PaymentIntentServiceTest extends TestCase
         $stale = $service->quoteForOrder(100.0, 'USD', 'XRP');
 
         $configProvider->setDestinationAccount('rNewAddress'); // merchant reconfigured
+        // Real counters start at a random offset (see the port contract), so pin the
+        // new account's sequence to make the expected tag deterministic here.
+        $repository->scriptSequences('rNewAddress', [0]);
 
         $this->queueXrpOraclePrice($client, '0.50');
         $refreshed = $service->quoteForOrder(100.0, 'USD', 'XRP', existing: $stale);
 
         self::assertSame('rNewAddress', $refreshed->destinationAccount);
-        // Fresh account, first tag it's ever issued (sequence 0) - deterministic value,
-        // same one verified independently in DestinationTagServiceTest. Confirms a real
-        // fresh generation happened rather than $stale's tag leaking through by accident
-        // (a same-numbered tag would still be a valid, distinct pair under a different
-        // account, so comparing tag numbers alone wouldn't prove anything here).
+        // Sequence 0 on the fresh account - deterministic value, same one verified
+        // independently in DestinationTagServiceTest. Confirms a real fresh generation
+        // happened rather than $stale's tag leaking through by accident (a same-numbered
+        // tag would still be a valid, distinct pair under a different account, so
+        // comparing tag numbers alone wouldn't prove anything here).
         self::assertSame(114729, $refreshed->destinationTag);
     }
 
