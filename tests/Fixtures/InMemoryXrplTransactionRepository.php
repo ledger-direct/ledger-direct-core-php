@@ -24,16 +24,25 @@ final class InMemoryXrplTransactionRepository implements XrplTransactionReposito
     /** @var array<string, list<int>> scripted sequence values per account, consumed first */
     private array $scriptedSequences = [];
 
+    /**
+     * Upper bound for the counter's random start, per the port contract —
+     * low enough that ~2.1 billion sequences remain before exhaustion.
+     */
+    private const MAX_RANDOM_START = 2147483647;
+
     public function nextDestinationTagSequence(string $destinationAccount): int
     {
         if (!empty($this->scriptedSequences[$destinationAccount] ?? [])) {
             return array_shift($this->scriptedSequences[$destinationAccount]);
         }
 
-        $next = $this->sequences[$destinationAccount] ?? 0;
-        $this->sequences[$destinationAccount] = $next + 1;
+        // Random start, not 0 — see the port contract. This fixture is the
+        // core's reference implementation of that rule.
+        if (!isset($this->sequences[$destinationAccount])) {
+            $this->sequences[$destinationAccount] = random_int(0, self::MAX_RANDOM_START);
+        }
 
-        return $next;
+        return $this->sequences[$destinationAccount]++;
     }
 
     /**

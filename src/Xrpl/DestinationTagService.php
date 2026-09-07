@@ -55,6 +55,14 @@ final class DestinationTagService
      * (the account's real exhaustion point — see below). No pre-generation,
      * no retry loop, O(1) regardless of how many tags the account already
      * has, and the result still looks random from the outside.
+     *
+     * That guarantee holds **per counter**, i.e. per installation. Two
+     * installations sharing one receiving account are two counters, so the
+     * port requires each to start at its own random offset — otherwise both
+     * walk the same sequence and issue the same tags. See
+     * XrplTransactionRepositoryInterface::nextDestinationTagSequence().
+     * Nothing here needs to change for that: the permutation is a bijection
+     * over the whole range, so it does not care where the counter starts.
      */
     public function generateDestinationTag(string $destinationAccount): int
     {

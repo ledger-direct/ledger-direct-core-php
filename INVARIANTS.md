@@ -183,6 +183,15 @@ currency code is still the 40-character USDC representation.
   `DestinationTagService` derives the actual tag from that counter via a fixed permutation rather
   than storing every issued tag, so this table stays a small, constant-size-per-account row instead
   of growing by one row per order.
+- The counter **starts at a random `random_int(0, 2^31 - 1)`**, drawn once when the row is created,
+  and increments by one from there. **Never 0.** The permutation's multiplier and offset are public
+  constants, so a fixed start makes the tag sequence identical in every installation: two shops
+  sharing one receiving account hand out the same tags and settle each other's orders, and dropping
+  the counter table re-issues tags that the installation's own open orders are waiting on. Starting
+  no higher than 2^31-1 still leaves ~2.1 billion sequences before exhaustion, so no wraparound is
+  needed and `DestinationTagsExhaustedException` stays reachable.
+- `ledger_direct_xrpl_destination_tag` **must survive plugin uninstall.** It is the only record that
+  a tag was already issued; a fresh counter re-issues tags belonging to orders that are still open.
 - The core defines the **schema** (SQL/DDL as a constant or migration template); the platform
   creates it through its own DB layer.
 
