@@ -52,7 +52,23 @@ interface XrplTransactionRepositoryInterface
      */
     public function saveTransactions(array $transactions): void;
 
-    public function findTransaction(string $destination, int $destinationTag): ?XrplTransaction;
+    /**
+     * Every transaction stored for this destination account and tag,
+     * **newest first**: `ORDER BY ledger_index DESC`, tie-broken by the
+     * storage primary key descending so the order is total.
+     *
+     * Plural on purpose. A single tag can legitimately carry more than one
+     * transaction — a stray payment in the wrong asset, a payment that
+     * predates the order, two partial payments — and returning whichever
+     * row the primary key happened to surface first is what let a foreign
+     * payment settle someone else's order. **Which** of the candidates
+     * fulfills a given intent is a core decision
+     * ({@see \Hardcastle\LedgerDirect\Core\Xrpl\SyncService::findTransactionFor()}),
+     * not a storage one, so this method filters by nothing but the pair.
+     *
+     * @return XrplTransaction[] newest first; empty when nothing matches
+     */
+    public function findTransactions(string $destination, int $destinationTag): array;
 
     /**
      * @return string|null the highest synced ledger_index, or null if none synced yet

@@ -58,6 +58,23 @@ Field names are literal and identical across all plugins:
 Whether a delivered amount pays for a quote is a core decision (`Core\Payment\SettlementPolicy`),
 not a per-plugin one: every platform must call an order paid under exactly the same conditions.
 
+**Which** transaction fulfills an intent is a core decision too, not just *whether* it settles.
+A destination tag can carry several transactions — a stray payment in the wrong asset, a payment
+that predates the order, two partial payments — so the repository port returns them all
+(`findTransactions()`, newest first) and `SyncService::findTransactionFor()` chooses:
+
+- The newest candidate whose delivered amount has the **same asset class** as the quote: a native
+  float pays a native quote, an issued-currency object pays an issued-currency quote. A class
+  mismatch is skipped and logged, never handed to `withFulfillment()` — that rejects the shape
+  outright, which aborts the sync and leaves the order unpaid with the real payment sitting
+  unexamined next to it.
+- A candidate in the right class but from the **wrong issuer** is *not* skipped. It is a genuine
+  payment attempt on this order; `SettlementPolicy` declares it non-settling with the full amount
+  still outstanding, so the platform can tell the customer their token was wrong rather than show
+  them nothing.
+- A candidate that delivered nothing measurable (not a Payment) or whose delivered amount is
+  unreadable (the ledger's `"unavailable"`) is skipped and logged — never a reason to abort.
+
 - A `PaymentIntent` without `amount_paid` is never settled.
 - **Native asset** (e.g. XRP): settled when `amount_paid >= amount_requested × (1 − tolerance)`. The
   default tolerance is **0.15 %** (`0.0015`) — the quote is a float rounded to five places and wallets
