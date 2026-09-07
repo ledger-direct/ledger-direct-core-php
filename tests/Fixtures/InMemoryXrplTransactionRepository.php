@@ -96,14 +96,15 @@ final class InMemoryXrplTransactionRepository implements XrplTransactionReposito
         return $matches;
     }
 
-    public function getLastSyncedLedgerIndex(): ?string
+    public function getLastSyncedLedgerIndex(string $destinationAccount, string $network): ?string
     {
-        if ($this->transactionsByHash === []) {
-            return null;
-        }
-
         $max = null;
+
         foreach ($this->transactionsByHash as $transaction) {
+            if ($transaction->destination !== $destinationAccount || $transaction->network !== $network) {
+                continue;
+            }
+
             if ($max === null || (int) $transaction->ledgerIndex > (int) $max) {
                 $max = $transaction->ledgerIndex;
             }

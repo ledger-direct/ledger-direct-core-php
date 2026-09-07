@@ -173,6 +173,15 @@ currency code is still the 40-character USDC representation.
   `XrplTransactionRepositoryInterface`, so applying the prefix is 100% the adapter's concern and
   nothing needs to be injected into the core.
 - Unique index on `hash`.
+- `ledger_direct_xrpl_tx` carries a **`network` column** (`VARCHAR(16) NOT NULL`, `'mainnet'` |
+  `'testnet'`) with an index on `(destination, network, ledger_index)`. A ledger index only means
+  anything within one network, so the sync cursor
+  (`XrplTransactionRepositoryInterface::getLastSyncedLedgerIndex($destinationAccount, $network)`)
+  must be scoped by both. A global `MAX(ledger_index)` is not a valid implementation: one mainnet
+  row pins the cursor above every testnet ledger and the testnet sync then returns nothing
+  forever, and a merchant who switches receiving accounts starts the new account at the old one's
+  cursor. The CTID does encode a network id, but parsing it back out is far more work than a column.
+
 - `destination_tag` values are **unsigned 32-bit integers** — XRPL's DestinationTag field's true
   range is `0`–`4294967295`. Ground truth's MySQL schema uses a *signed* `INT`, capping usable
   values at `2147483647`; the core's `DestinationTagService` generates across the full unsigned
@@ -194,6 +203,18 @@ currency code is still the 40-character USDC representation.
   a tag was already issued; a fresh counter re-issues tags belonging to orders that are still open.
 - The core defines the **schema** (SQL/DDL as a constant or migration template); the platform
   creates it through its own DB layer.
+
+### The testnet is not persistent
+
+The XRPL testnet is reset periodically, which rewinds its ledger index. Rows from a previous epoch
+then sit above the live ledger, and a cursor derived from them asks for a range that does not
+exist — rippled answers `lgrIdxsInvalid` on every sync, for every order, indefinitely.
+
+**The core must survive that without anyone touching the database.** On `lgrIdxsInvalid`, and only
+when a cursor was actually sent, `SyncService` logs a PSR-3 warning and repeats the sync once with
+no `ledger_index_min` at all; `findExistingHashes()` keeps that from duplicating anything. Without
+a cursor the same error means something else and is not retried. Testnet rows surviving a reset are
+worthless but harmless — they are not deleted, just out-ranked by the resync.
 
 ## Security
 

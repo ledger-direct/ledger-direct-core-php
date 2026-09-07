@@ -81,6 +81,7 @@ final class XrplTransactionTest extends TestCase
     {
         return new XrplTransaction(
             ledgerIndex: '100',
+            network: 'testnet',
             hash: 'HASH',
             ctid: 'C0000000000000000000000',
             account: 'rSender',
