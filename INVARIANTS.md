@@ -87,6 +87,14 @@ that predates the order, two partial payments — so the repository port returns
 - Overpayment settles. What to do with the surplus is the platform's business.
 - `SettlementPolicy::shortfall()` reports what is still missing as a decimal string (null once
   settled) — the number a payment page shows as "X of Y received".
+- `SettlementPolicy::creditedValue()` reports how much of the request has been credited, as a
+  decimal string. A payment in the wrong asset credits `"0"`, however large it was: the delivered
+  value must never be shown as progress towards an order it cannot settle. Together with
+  `shortfall()` it always adds up to exactly the requested amount.
+- `SettlementPolicy::isWrongAsset()` answers *why* nothing was credited — the customer paid, their
+  wallet reported success, and it was a different asset. **Adapters must not re-derive this**, by
+  comparing issuer and currency themselves or by inferring it from `shortfall()`; that is how one
+  rule grew four slightly different definitions across the plugins.
 - What "paid" *does* on the platform — invoice, order status, emails — is the adapter's concern.
 
 ## Rate caching

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Tests\Payment;
 
+use Brick\Math\BigDecimal;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Payment\SettlementPolicy;
 use InvalidArgumentException;
@@ -112,6 +113,94 @@ final class SettlementPolicyTest extends TestCase
         self::assertNull($this->xrpQuote(1.0)->amountPaidValue());
         self::assertSame('100', $this->xrpQuote(100.0)->amountRequestedValue(), 'no trailing ".0"');
         self::assertSame('0.000001', $this->xrpQuote(0.000001)->amountRequestedValue(), 'no exponent notation');
+    }
+
+    /**
+     * The case an adapter has to explain to a customer: they paid, their wallet says so, and the
+     * order is no closer to being settled. Naming it here is what keeps four platforms from
+     * inventing four wordings for the same situation.
+     */
+    public function testAWrongAssetIsNamedAsSuchAndCreditsNothing(): void
+    {
+        $policy = new SettlementPolicy();
+        $otherIssuer = ['currency' => self::USDC['currency'], 'issuer' => 'rSomebodyElse', 'value' => '39.00'];
+        $otherCurrency = ['currency' => '524C555344000000000000000000000000000000', 'issuer' => self::USDC['issuer'], 'value' => '39.00'];
+
+        foreach ([$otherIssuer, $otherCurrency] as $paid) {
+            $intent = $this->usdcQuote('39.00')->withFulfillment('H', $paid);
+
+            self::assertTrue($policy->isWrongAsset($intent));
+            self::assertSame('0', $policy->creditedValue($intent), 'a wrong token is not progress');
+            self::assertSame('39', $policy->shortfall($intent));
+        }
+    }
+
+    public function testTheQuotedTokenCountsTowardsTheOrder(): void
+    {
+        $policy = new SettlementPolicy();
+
+        $partial = $this->usdcQuote('39.00')->withFulfillment('H', self::USDC + ['value' => '30']);
+        self::assertFalse($policy->isWrongAsset($partial));
+        self::assertSame('30', $policy->creditedValue($partial));
+        self::assertSame('9', $policy->shortfall($partial));
+
+        // Overpayment settles; what counts is what arrived, surplus included.
+        $over = $this->usdcQuote('39.00')->withFulfillment('H', self::USDC + ['value' => '40.5']);
+        self::assertSame('40.5', $policy->creditedValue($over));
+        self::assertNull($policy->shortfall($over));
+    }
+
+    /**
+     * There is no issuer or currency code on a native amount, so there is nothing to mismatch —
+     * an XRP payment can be too small, but never the wrong asset.
+     */
+    public function testANativeAmountIsNeverTheWrongAsset(): void
+    {
+        $policy = new SettlementPolicy();
+        $underpaid = $this->xrpQuote(26.75411)->withFulfillment('H', 0.84);
+
+        self::assertFalse($policy->isWrongAsset($underpaid));
+        self::assertSame('0.84', $policy->creditedValue($underpaid));
+    }
+
+    public function testNothingPaidCreditsZeroWithoutBlamingTheAsset(): void
+    {
+        $policy = new SettlementPolicy();
+
+        self::assertFalse($policy->isWrongAsset($this->usdcQuote('39.00')));
+        self::assertSame('0', $policy->creditedValue($this->usdcQuote('39.00')));
+        self::assertSame('0', $policy->creditedValue($this->xrpQuote(1.0)));
+    }
+
+    /**
+     * The two numbers a payment page prints side by side have to agree: whatever is credited plus
+     * whatever is outstanding is exactly what was asked for. Nothing may fall between them.
+     */
+    public function testCreditedAndOutstandingAlwaysAddUpToTheRequest(): void
+    {
+        $policy = new SettlementPolicy();
+        $wrongIssuer = ['currency' => self::USDC['currency'], 'issuer' => 'rSomebodyElse', 'value' => '12'];
+
+        $unsettled = [
+            $this->usdcQuote('39.00')->withFulfillment('H', self::USDC + ['value' => '30']),
+            $this->usdcQuote('39.00')->withFulfillment('H', $wrongIssuer),
+            $this->usdcQuote('39.00'),
+            $this->xrpQuote(26.75411)->withFulfillment('H', 0.84),
+            $this->xrpQuote(26.75411),
+        ];
+
+        foreach ($unsettled as $intent) {
+            self::assertFalse($policy->isSettled($intent));
+            // Compared as decimals, not as strings: "39" and "39.00" are the same number,
+            // and the scale a value happens to carry is not part of the promise.
+            self::assertSame(
+                PaymentIntent::plainDecimal(BigDecimal::of($intent->amountRequestedValue())),
+                PaymentIntent::plainDecimal(
+                    BigDecimal::of($policy->creditedValue($intent))
+                        ->plus(BigDecimal::of((string) $policy->shortfall($intent)))
+                ),
+            );
+        }
     }
 
     private function xrpQuote(float $requested): PaymentIntent
