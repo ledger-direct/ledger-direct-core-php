@@ -97,6 +97,63 @@ that predates the order, two partial payments — so the repository port returns
   rule grew four slightly different definitions across the plugins.
 - What "paid" *does* on the platform — invoice, order status, emails — is the adapter's concern.
 
+## Payment status
+
+"Is this order paid?" has one answer shape across every platform: `Core\Payment\PaymentStatus`,
+**derived** from a `PaymentIntent`, a `SettlementPolicy` and the clock — never stored, no new
+record, no migration. Every platform's status endpoint serializes it and appends only what the
+platform alone knows.
+
+Exactly five states, each of which a payment page must be able to show:
+
+| State | Meaning | Extra fields |
+|---|---|---|
+| `waiting` | Nothing arrived, quote still valid | `seconds_left` |
+| `partial` | Arrived in the quoted asset, does not settle | `amount_paid`, `shortfall` |
+| `wrong_asset` | Arrived, but another currency or another issuer | `amount_paid`, `shortfall` |
+| `settled` | Paid — the only terminal state | `amount_paid` |
+| `expired` | Nothing arrived, quote expired | — |
+
+**Derivation order is part of the contract:**
+
+1. `SettlementPolicy::isSettled()` → `settled`
+2. no `amount_paid` **and** `now >= expiry` → `expired`
+3. no `amount_paid` → `waiting`
+4. `SettlementPolicy::isWrongAsset()` → `wrong_asset`
+5. otherwise → `partial`
+
+A partial payment on an expired quote is `partial`, not `expired`: the customer sent real money,
+and the page must say so before it talks about validity periods. `expired` means only "nothing
+there, and the rate is stale". A quote expires **at** its `expiry` timestamp, so `seconds_left` is
+never `0` in `waiting`; a quote without an `expiry` never expires and has no countdown
+(`seconds_left` null).
+
+`toArray()` carries exactly these keys, in this order, every key always present:
+
+| Field | Shape |
+|---|---|
+| `schema_version` | Integer, currently `1`. First field, as in `PaymentIntent`. |
+| `state` | One of the five values above. |
+| `base_asset` | As in the intent. |
+| `amount_requested` | As in the intent, same shape rule. |
+| `amount_paid` | What actually arrived, as in the intent — **decoded**, undiminished, and in `wrong_asset` the *delivered* asset, so the page can name the wrong token. Null while nothing arrived. |
+| `shortfall` | What is still due, **in the shape of `amount_requested`**: a float for a native asset, an `IssuedCurrencyAmount` carrying the *quoted* currency and issuer for everything else. Null unless `partial` or `wrong_asset`. In `wrong_asset` it is the whole request: nothing was credited. |
+| `seconds_left` | Only in `waiting`, else null. |
+
+- **`redirect` is not in the payload.** Building a URL is platform work; the adapter appends it
+  to the serialized form. The core knows no HTTP.
+- **Amount formatting stays out.** The core returns numbers, the adapter turns them into text.
+- **Only `settled` is terminal** (`isTerminal()`). A frontend keeps polling through `partial` and
+  `wrong_asset` so a top-up is noticed, and through `expired` so a late payment is.
+- **Throttling is mandatory and lives in the adapter.** A status endpoint syncs with the ledger
+  only when this order's last sync is older than `PaymentStatus::MIN_SYNC_INTERVAL_SECONDS`
+  (5 s); otherwise it answers from the stored intent, in the same shape. The timestamp of the last
+  sync is platform storage, not part of `PaymentIntent`. The core names the interval so four
+  platforms don't each pick their own; it does not enforce it.
+- **Key knowledge, not account membership.** The endpoint authenticates with a per-order secret
+  and must not require a login — guest checkout is the rule in crypto payments. It returns the
+  status and nothing else, so a guessed key reveals nothing the payment page doesn't show already.
+
 ## Rate caching
 
 Optional, and **off entirely** unless a PSR-16 cache is injected into `PriceService` — without one

@@ -9,7 +9,8 @@ Composer package: `hardcastle/ledger-direct-core`. No framework dependency, no c
 extensions.
 
 The contract this package guarantees — metadata field shapes, conversion/rounding rules, the
-settlement decision, the stablecoin registry, the oracle set, table naming — is defined in
+settlement decision, the payment-status payload, the stablecoin registry, the oracle set, table
+naming — is defined in
 [`INVARIANTS.md`](INVARIANTS.md) and is not to be changed without a semver-major bump.
 
 ## Naming across languages
