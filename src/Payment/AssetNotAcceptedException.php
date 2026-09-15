@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Payment;
 
+use Hardcastle\LedgerDirect\Core\LedgerDirectException;
+
 use RuntimeException;
 
 /**
@@ -12,6 +14,6 @@ use RuntimeException;
  * expected, specifically-catchable business outcome, not a programming
  * error.
  */
-final class AssetNotAcceptedException extends RuntimeException
+final class AssetNotAcceptedException extends RuntimeException implements LedgerDirectException
 {
 }

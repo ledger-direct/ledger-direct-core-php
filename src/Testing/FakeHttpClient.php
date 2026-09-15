@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hardcastle\LedgerDirect\Core\Tests\Fixtures;
+namespace Hardcastle\LedgerDirect\Core\Testing;
 
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
@@ -19,8 +19,6 @@ use Throwable;
  * throws — that's also how tests prove a code path made *no* HTTP call at
  * all (e.g. the USD-peg fast path): queue nothing, and an unexpected call
  * fails loudly instead of silently hitting the real network.
- *
- * @internal
  */
 final class FakeHttpClient implements ClientInterface
 {

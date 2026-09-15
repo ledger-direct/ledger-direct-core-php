@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hardcastle\LedgerDirect\Core\Tests\Fixtures;
+namespace Hardcastle\LedgerDirect\Core\Testing;
 
 use Hardcastle\LedgerDirect\Core\Port\ConfigProviderInterface;
 
@@ -17,8 +17,6 @@ use Hardcastle\LedgerDirect\Core\Port\ConfigProviderInterface;
  * values, since every current test scenario is XRPL-only. Genuinely
  * per-chain fixture state is a YAGNI call until a test actually needs to
  * distinguish chains.
- *
- * @internal
  */
 final class FakeConfigProvider implements ConfigProviderInterface
 {

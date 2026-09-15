@@ -26,5 +26,9 @@
         <include>
             <directory>src</directory>
         </include>
+        <!-- Shipped test doubles for adapters; exercised by the suite, not something to measure. -->
+        <exclude>
+            <directory>src/Testing</directory>
+        </exclude>
     </source>
 </phpunit>

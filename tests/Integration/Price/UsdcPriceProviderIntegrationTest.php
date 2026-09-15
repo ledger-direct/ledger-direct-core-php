@@ -7,7 +7,7 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Integration\Price;
 use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\HttpFactory;
 use Hardcastle\LedgerDirect\Core\Price\UsdcPriceProvider;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
+use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
 use PHPUnit\Framework\TestCase;
 
 /**

@@ -7,8 +7,8 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Price;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Hardcastle\LedgerDirect\Core\Price\UsdcPriceProvider;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
+use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
+use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
 use PHPUnit\Framework\TestCase;
 
 final class UsdcPriceProviderTest extends TestCase

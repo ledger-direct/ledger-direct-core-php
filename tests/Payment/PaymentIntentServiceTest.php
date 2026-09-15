@@ -10,10 +10,11 @@ use Hardcastle\LedgerDirect\Core\Payment\AssetNotAcceptedException;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentIntentService;
 use Hardcastle\LedgerDirect\Core\Price\PriceService;
 use Hardcastle\LedgerDirect\Core\Price\PriceUnavailableException;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeConfigProvider;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryXrplTransactionRepository;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
+use Hardcastle\LedgerDirect\Core\Testing\FakeConfigProvider;
+use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
+use Hardcastle\LedgerDirect\Core\Testing\FrozenClock;
+use Hardcastle\LedgerDirect\Core\Testing\InMemoryXrplTransactionRepository;
+use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
 use PHPUnit\Framework\TestCase;
 
@@ -130,16 +131,38 @@ final class PaymentIntentServiceTest extends TestCase
         $service->quoteForOrder(100.0, 'USD', 'XRP');
     }
 
+    /**
+     * The quote's expiry is "now plus the configured window", and "now" is
+     * whatever clock was injected — so an adapter's tests can pin it.
+     */
+    public function testTheExpiryIsComputedFromTheInjectedClock(): void
+    {
+        $clock = new FrozenClock(1_700_000_000);
+        $service = $this->makeService(
+            new FakeHttpClient(),
+            new InMemoryXrplTransactionRepository(),
+            new FakeConfigProvider(quoteExpirySeconds: 300),
+            $clock,
+        );
+
+        self::assertSame(1_700_000_300, $service->quoteForOrder(50.0, 'USD', 'RLUSD')->expiry);
+
+        $clock->advance(60);
+
+        self::assertSame(1_700_000_360, $service->quoteForOrder(50.0, 'USD', 'RLUSD')->expiry);
+    }
+
     private function makeService(
         FakeHttpClient $client,
         InMemoryXrplTransactionRepository $repository,
         FakeConfigProvider $configProvider,
+        ?FrozenClock $clock = null,
     ): PaymentIntentService {
         $requestFactory = new HttpFactory();
         $priceService = new PriceService($client, $requestFactory, new RecordingLogger());
         $destinationTagService = new DestinationTagService($repository);
 
-        return new PaymentIntentService($priceService, $destinationTagService, $configProvider);
+        return new PaymentIntentService($priceService, $destinationTagService, $configProvider, $clock);
     }
 
     private function queueXrpOraclePrice(FakeHttpClient $client, string $price): void

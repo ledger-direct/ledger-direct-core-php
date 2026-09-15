@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Price;
 
+use Hardcastle\LedgerDirect\Core\LedgerDirectException;
+
 use RuntimeException;
 
 /**
@@ -11,6 +13,6 @@ use RuntimeException;
  * distinct from a programming error so callers can catch it specifically
  * (e.g. to show "try again shortly" rather than a hard failure).
  */
-final class PriceUnavailableException extends RuntimeException
+final class PriceUnavailableException extends RuntimeException implements LedgerDirectException
 {
 }

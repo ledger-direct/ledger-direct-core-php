@@ -5,8 +5,8 @@ stablecoin registry, transaction sync) shared across every LedgerDirect plugin.
 
 Composer package: `hardcastle/ledger-direct-core`. No framework dependency, no concrete Guzzle, no
 `xrpl_php`. Depends only on the PSR interfaces (`psr/http-client`, `psr/http-factory`, `psr/log`,
-`psr/simple-cache`) plus `brick/math` for exact decimal arithmetic — pure PHP, no required
-extensions.
+`psr/simple-cache`, `psr/clock`) plus `brick/math` for exact decimal arithmetic — pure PHP, no
+required extensions.
 
 The contract this package guarantees — metadata field shapes, conversion/rounding rules, the
 settlement decision, the payment-status payload, the stablecoin registry, the oracle set, table
@@ -22,6 +22,33 @@ naming — is defined in
 | Ruby (later) | `ledger-direct-core-rb` | `ledger-direct-core` (gem) |
 
 Namespace: `Hardcastle\LedgerDirect\Core\…`.
+
+## Wiring
+
+One composition root, every port in once, every service out:
+
+```php
+use Hardcastle\LedgerDirect\Core\LedgerDirect;
+
+$core = LedgerDirect::create(
+    $httpClient,            // PSR-18
+    $requestFactory,        // PSR-17
+    $streamFactory,         // PSR-17
+    $logger,                // PSR-3
+    $transactionRepository, // your XrplTransactionRepositoryInterface
+    $configProvider,        // your ConfigProviderInterface
+    $cache,                 // PSR-16, optional: rate cache + sync throttle
+    $clock,                 // PSR-20, optional: defaults to the wall clock
+);
+
+$core->paymentIntentService()->quoteForOrder($total, 'EUR', 'XRP');
+$core->syncThrottle()?->syncIfDue($core->syncService(), $account, $network);
+$core->paymentStatus($intent)->toArray();
+```
+
+Services are built lazily and memoised. This is the object a Laravel service provider binds and
+a facade points at, or a Symfony bundle registers as one service — the core itself holds no
+static state and ships no facade. Table DDL for your migration comes from `Xrpl\Schema`.
 
 ## Local setup
 
@@ -52,6 +79,15 @@ docker compose run --rm php vendor/bin/phpunit --testsuite integration # real or
 
 Run the integration suite deliberately (e.g. after touching an `Oracle` class) — it's not
 CI-gating, and it can be flaky against live, rate-limited third-party APIs.
+
+### Testing kit for adapters
+
+`src/Testing/` ships with the package: `InMemoryXrplTransactionRepository`, `FakeHttpClient`,
+`FakeConfigProvider`, `InMemoryCache`, `RecordingLogger` and `FrozenClock`, so an adapter can test
+its services without a database or network. `XrplTransactionRepositoryContractTestCase` is the
+contract every repository implementation has to keep — extend it, implement `repository()`, and
+the newest-first ordering, the per-network cursor and the random counter start are covered. It
+needs PHPUnit, which the core only suggests.
 
 ## Distribution
 
