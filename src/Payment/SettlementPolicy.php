@@ -52,8 +52,7 @@ final class SettlementPolicy
 
         if (is_array($intent->amountRequested)) {
             return is_array($intent->amountPaid)
-                && $intent->amountPaid['currency'] === $intent->amountRequested['currency']
-                && $intent->amountPaid['issuer'] === $intent->amountRequested['issuer']
+                && !$this->isWrongAsset($intent)
                 && BigDecimal::of((string) $intent->amountPaid['value'])
                     ->isGreaterThanOrEqualTo(BigDecimal::of((string) $intent->amountRequested['value']));
         }
@@ -66,6 +65,42 @@ final class SettlementPolicy
         $acceptable = $requested->minus($requested->multipliedBy($this->nativeAssetTolerance));
 
         return BigDecimal::of((string) $intent->amountPaid)->isGreaterThanOrEqualTo($acceptable);
+    }
+
+    /**
+     * Whether what arrived is a different asset than the one quoted: a token with the right name
+     * from another issuer, or another token from the right issuer. The customer did pay and their
+     * wallet reports success — it simply credits nothing towards this order.
+     *
+     * Public because every adapter needs it to tell the customer *why* nothing was credited, and
+     * because each of them deriving it again is how one rule ends up with four slightly different
+     * definitions. Before this existed, two adapters compared issuer and currency themselves while
+     * two others inferred it from `shortfall() === amountRequestedValue()`.
+     *
+     * A native asset can never be the wrong asset: PaymentIntent accepts nothing but a float
+     * there, so there is no issuer or currency code to mismatch.
+     */
+    public function isWrongAsset(PaymentIntent $intent): bool
+    {
+        if (!is_array($intent->amountRequested) || !is_array($intent->amountPaid)) {
+            return false;
+        }
+
+        return $intent->amountPaid['currency'] !== $intent->amountRequested['currency']
+            || $intent->amountPaid['issuer'] !== $intent->amountRequested['issuer'];
+    }
+
+    /**
+     * How much of the request has actually been credited, as a plain decimal string — the number
+     * a payment page means by "received so far".
+     *
+     * Deliberately not the delivered amount: a payment in the wrong asset credits **"0"**, however
+     * large it was. Showing the delivered value there would present a payment that can never
+     * settle the order as progress towards settling it.
+     */
+    public function creditedValue(PaymentIntent $intent): string
+    {
+        return PaymentIntent::plainDecimal($this->countablePaidValue($intent));
     }
 
     /**
@@ -100,10 +135,7 @@ final class SettlementPolicy
             return BigDecimal::zero();
         }
 
-        if (is_array($intent->amountRequested)
-            && ($intent->amountPaid['currency'] !== $intent->amountRequested['currency']
-                || $intent->amountPaid['issuer'] !== $intent->amountRequested['issuer'])
-        ) {
+        if ($this->isWrongAsset($intent)) {
             return BigDecimal::zero();
         }
 
