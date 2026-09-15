@@ -58,22 +58,35 @@ Field names are literal and identical across all plugins:
 Whether a delivered amount pays for a quote is a core decision (`Core\Payment\SettlementPolicy`),
 not a per-plugin one: every platform must call an order paid under exactly the same conditions.
 
-**Which** transaction fulfills an intent is a core decision too, not just *whether* it settles.
+**Which** transactions fulfill an intent is a core decision too, not just *whether* it settles.
 A destination tag can carry several transactions — a stray payment in the wrong asset, a payment
 that predates the order, two partial payments — so the repository port returns them all
-(`findTransactions()`, newest first) and `SyncService::findTransactionFor()` chooses:
+(`findTransactions()`, newest first) and `SyncService::findFulfillmentFor()` decides, returning a
+`Fulfillment` (the contributing transactions plus their summed amount) that `applyTo()` puts on
+the intent:
 
-- The newest candidate whose delivered amount has the **same asset class** as the quote: a native
-  float pays a native quote, an issued-currency object pays an issued-currency quote. A class
-  mismatch is skipped and logged, never handed to `withFulfillment()` — that rejects the shape
-  outright, which aborts the sync and leaves the order unpaid with the real payment sitting
-  unexamined next to it.
-- A candidate in the right class but from the **wrong issuer** is *not* skipped. It is a genuine
-  payment attempt on this order; `SettlementPolicy` declares it non-settling with the full amount
-  still outstanding, so the platform can tell the customer their token was wrong rather than show
-  them nothing.
-- A candidate that delivered nothing measurable (not a Payment) or whose delivered amount is
-  unreadable (the ledger's `"unavailable"`) is skipped and logged — never a reason to abort.
+- **All** candidates in the **quoted asset** fulfill the intent together, and `amount_paid` is
+  their **sum** (exact, via `brick/math`; a float for a native asset, a plain decimal string in
+  the quoted envelope for an issued currency). Two partial payments add up; a top-up of the
+  shortfall settles. "Quoted asset" means: for a native asset every native amount on the tag, for
+  an issued currency only those with the quoted `currency` **and** `issuer` — the same rule
+  `SettlementPolicy::isWrongAsset()` states as a verdict, used here as a filter.
+- A candidate in the right class but with another currency or another issuer does **not** count
+  towards the sum. It becomes the fulfillment — alone, newest first — only when **nothing** in
+  the quoted asset has arrived, so the platform can show `wrong_asset` with the delivered amount.
+  As soon as one payment in the quoted asset exists, only those count and the foreign ones are
+  logged.
+- `hash` and `ctid` on the intent name the **newest contributing** transaction; schema v1 carries
+  no list. The full list is on the `Fulfillment` and always recoverable via `findTransactions()`.
+- No time filter: the intent has no creation timestamp, and the tag's uniqueness (random counter
+  start since 0.4) is the guarantee that everything on it belongs to this order.
+- Unchanged: a class mismatch (a native float on an issued-currency quote or vice versa), a
+  candidate that delivered nothing measurable (not a Payment) and an unreadable delivered amount
+  (the ledger's `"unavailable"`) are skipped and logged — never a reason to abort, and never handed
+  to `withFulfillment()`, which rejects the shape outright.
+- `SyncService::findTransactionFor()` — the single newest candidate in the quoted asset class — is
+  **deprecated since 0.6.0** and keeps its old behaviour until it is removed in 1.0. An adapter on
+  it never adds partial payments up.
 
 - A `PaymentIntent` without `amount_paid` is never settled.
 - **Native asset** (e.g. XRP): settled when `amount_paid >= amount_requested × (1 − tolerance)`. The
@@ -109,7 +122,7 @@ Exactly five states, each of which a payment page must be able to show:
 | State | Meaning | Extra fields |
 |---|---|---|
 | `waiting` | Nothing arrived, quote still valid | `seconds_left` |
-| `partial` | Arrived in the quoted asset, does not settle | `amount_paid`, `shortfall` |
+| `partial` | Arrived in the quoted asset, does not settle — `amount_paid` is the **sum** of every payment in the quoted asset on this tag | `amount_paid`, `shortfall` |
 | `wrong_asset` | Arrived, but another currency or another issuer | `amount_paid`, `shortfall` |
 | `settled` | Paid — the only terminal state | `amount_paid` |
 | `expired` | Nothing arrived, quote expired | — |

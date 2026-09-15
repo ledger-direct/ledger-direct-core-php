@@ -84,8 +84,9 @@ interface XrplTransactionRepositoryInterface
      * predates the order, two partial payments — and returning whichever
      * row the primary key happened to surface first is what let a foreign
      * payment settle someone else's order. **Which** of the candidates
-     * fulfills a given intent is a core decision
-     * ({@see \Hardcastle\LedgerDirect\Core\Xrpl\SyncService::findTransactionFor()}),
+     * fulfill a given intent — and that several in the quoted asset add up —
+     * is a core decision
+     * ({@see \Hardcastle\LedgerDirect\Core\Xrpl\SyncService::findFulfillmentFor()}),
      * not a storage one, so this method filters by nothing but the pair.
      *
      * @return XrplTransaction[] newest first; empty when nothing matches
