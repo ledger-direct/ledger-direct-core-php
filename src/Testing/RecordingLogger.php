@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hardcastle\LedgerDirect\Core\Tests\Fixtures;
+namespace Hardcastle\LedgerDirect\Core\Testing;
 
 use Psr\Log\AbstractLogger;
 use Stringable;
@@ -10,8 +10,6 @@ use Stringable;
 /**
  * Test-only PSR-3 logger spy — records everything logged instead of writing
  * it anywhere, so tests can assert a warning was emitted.
- *
- * @internal
  */
 final class RecordingLogger extends AbstractLogger
 {

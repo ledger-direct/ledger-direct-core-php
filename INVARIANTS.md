@@ -9,6 +9,12 @@ names).
 
 Breaking this contract is a semver-major change (see `CLAUDE.md`, section 2).
 
+The services this contract describes are wired through one composition root,
+`Core\LedgerDirect::create()`: every port in once, every service out, each built lazily and
+memoised. Constructing the services by hand still works; the root is what a platform binds in
+its container, and the only wiring the core promises to keep stable across releases. The core
+holds no static state and ships no facade — that belongs to a platform bridge.
+
 ## PaymentIntent (schema v1) — the versioned payment record
 
 The core models payment metadata as a domain object, `Core\Payment\PaymentIntent` — named
@@ -158,11 +164,13 @@ never `0` in `waiting`; a quote without an `expiry` never expires and has no cou
 - **Amount formatting stays out.** The core returns numbers, the adapter turns them into text.
 - **Only `settled` is terminal** (`isTerminal()`). A frontend keeps polling through `partial` and
   `wrong_asset` so a top-up is noticed, and through `expired` so a late payment is.
-- **Throttling is mandatory and lives in the adapter.** A status endpoint syncs with the ledger
-  only when this order's last sync is older than `PaymentStatus::MIN_SYNC_INTERVAL_SECONDS`
-  (5 s); otherwise it answers from the stored intent, in the same shape. The timestamp of the last
-  sync is platform storage, not part of `PaymentIntent`. The core names the interval so four
-  platforms don't each pick their own; it does not enforce it.
+- **Throttling is mandatory.** A status endpoint syncs with the ledger only when the receiving
+  account's last sync is older than `PaymentStatus::MIN_SYNC_INTERVAL_SECONDS` (5 s); otherwise
+  it answers from the stored intent, in the same shape. The core ships `Core\Xrpl\SyncThrottle`
+  over the same PSR-16 cache as the rate cache, keyed by network and account — the sync is per
+  account, so throttling per order would still let every waiting customer trigger a node request.
+  An adapter uses it (`syncIfDue()`) or an equivalent; the last-sync mark is never part of
+  `PaymentIntent`. A broken cache degrades to "always sync", never to "never sync".
 - **Key knowledge, not account membership.** The endpoint authenticates with a per-order secret
   and must not require a login — guest checkout is the rule in crypto payments. It returns the
   status and nothing else, so a guessed key reveals nothing the payment page doesn't show already.
@@ -279,8 +287,10 @@ currency code is still the 40-character USDC representation.
   needed and `DestinationTagsExhaustedException` stays reachable.
 - `ledger_direct_xrpl_destination_tag` **must survive plugin uninstall.** It is the only record that
   a tag was already issued; a fresh counter re-issues tags belonging to orders that are still open.
-- The core defines the **schema** (SQL/DDL as a constant or migration template); the platform
-  creates it through its own DB layer.
+- The core defines the **schema**: `Core\Xrpl\Schema::tables()` describes both tables as data
+  (columns, types, indexes) for a Laravel migration or a Doctrine table, and `Schema::mysql($prefix)`
+  is the ready-made DDL for the MySQL-based platforms. The platform creates the tables through its
+  own DB layer; the core never references a physical name.
 
 ### The testnet is not persistent
 

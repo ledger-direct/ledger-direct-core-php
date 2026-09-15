@@ -6,8 +6,10 @@ namespace Hardcastle\LedgerDirect\Core\Price;
 
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Hardcastle\LedgerDirect\Core\Clock\SystemClock;
 use Hardcastle\LedgerDirect\Core\Xrpl\StablecoinRegistry;
 use InvalidArgumentException;
+use Psr\Clock\ClockInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Log\LoggerInterface;
@@ -30,6 +32,8 @@ final class PriceService
 
     private readonly StablecoinRegistry $stablecoinRegistry;
 
+    private readonly ClockInterface $clock;
+
     /**
      * $rateCache is optional: without it the service behaves exactly as it
      * did before caching existed — every quote hits the oracles. The core
@@ -37,6 +41,10 @@ final class PriceService
      * business, exactly as with XrplTransactionRepositoryInterface. The
      * cache must be shared across requests: a checkout render *is* a
      * request, so a per-process array would buy nothing.
+     *
+     * $clock decides how old a cached rate is; the wall clock by default,
+     * a frozen one in tests so freshness and the stale horizon can be
+     * crossed without sleeping.
      */
     public function __construct(
         private readonly ClientInterface $httpClient,
@@ -44,8 +52,10 @@ final class PriceService
         private readonly LoggerInterface $logger,
         private readonly ?CacheInterface $rateCache = null,
         private readonly int $freshTtlSeconds = self::DEFAULT_FRESH_TTL_SECONDS,
+        ?ClockInterface $clock = null,
     ) {
         $this->stablecoinRegistry = new StablecoinRegistry();
+        $this->clock = $clock ?? new SystemClock();
     }
 
     /**
@@ -132,7 +142,7 @@ final class PriceService
 
         $key = self::cacheKey($network, $baseAsset, $quoteCurrency);
         $entry = $this->readEntry($key);
-        $now = time();
+        $now = $this->clock->now()->getTimestamp();
 
         if ($entry !== null && $now - $entry['fetched_at'] <= $this->freshTtlSeconds) {
             return $entry['rate'];

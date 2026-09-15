@@ -8,9 +8,10 @@ use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Hardcastle\LedgerDirect\Core\Price\PriceService;
 use Hardcastle\LedgerDirect\Core\Price\PriceUnavailableException;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryCache;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
+use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
+use Hardcastle\LedgerDirect\Core\Testing\FrozenClock;
+use Hardcastle\LedgerDirect\Core\Testing\InMemoryCache;
+use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
@@ -308,6 +309,38 @@ final class PriceServiceTest extends TestCase
 
         self::assertSame(2.0, $quote->exchangeRate);
         self::assertSame('50.00', $quote->amountRequested['value']);
+    }
+
+    /**
+     * Freshness and the stale horizon judged by an injected clock shared
+     * with the cache: crossing both without ageing entries by hand.
+     */
+    public function testFreshnessAndTheStaleHorizonFollowTheInjectedClock(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"ripple-usd":{"eur":0.919}}'));
+        $clock = new FrozenClock();
+        $cache = new InMemoryCache($clock);
+        $logger = new RecordingLogger();
+        $service = new PriceService($client, new HttpFactory(), $logger, $cache, 60, $clock);
+
+        $service->getCryptoPriceForOrder(91.9, 'EUR', 'RLUSD', 'mainnet');
+        $clock->advance(60);
+        $service->getCryptoPriceForOrder(91.9, 'EUR', 'RLUSD', 'mainnet');
+        self::assertCount(1, $client->sentRequests(), 'still fresh at exactly the TTL');
+
+        // Past the TTL the oracle is asked again; it is down, so the stale rate is served.
+        $client->queueResponse('api.coingecko.com', new Response(500));
+        $clock->advance(1);
+        $quote = $service->getCryptoPriceForOrder(91.9, 'EUR', 'RLUSD', 'mainnet');
+        self::assertEqualsWithDelta(0.919, $quote->exchangeRate, 0.0001);
+        self::assertSame('warning', $logger->records()[count($logger->records()) - 1]['level']);
+
+        // Past the stale horizon (5 x TTL) the entry has also expired from the cache itself.
+        $client->queueResponse('api.coingecko.com', new Response(500));
+        $clock->advance(240);
+        $this->expectException(PriceUnavailableException::class);
+        $service->getCryptoPriceForOrder(91.9, 'EUR', 'RLUSD', 'mainnet');
     }
 
     public function testWithoutACacheEveryQuoteStillHitsTheOracles(): void

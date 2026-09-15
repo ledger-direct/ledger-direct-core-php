@@ -7,7 +7,7 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Price\Oracle;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Hardcastle\LedgerDirect\Core\Price\Oracle\KrakenOracle;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
+use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
 use PHPUnit\Framework\TestCase;
 
 final class KrakenOracleTest extends TestCase

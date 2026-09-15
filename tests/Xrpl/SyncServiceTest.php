@@ -6,12 +6,12 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Xrpl;
 
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryXrplTransactionRepository;
+use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
+use Hardcastle\LedgerDirect\Core\Testing\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentStatus;
 use Hardcastle\LedgerDirect\Core\Payment\SettlementPolicy;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\RecordingLogger;
+use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncService;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplClient;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplRpcException;

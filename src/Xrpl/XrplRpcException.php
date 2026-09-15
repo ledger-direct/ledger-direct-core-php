@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Xrpl;
 
+use Hardcastle\LedgerDirect\Core\LedgerDirectException;
+
 use RuntimeException;
 use Throwable;
 
@@ -13,7 +15,7 @@ use Throwable;
  * empty/not-found result (see XrplClient) so a caller can tell "the call
  * failed" apart from "there's genuinely nothing there."
  */
-final class XrplRpcException extends RuntimeException
+final class XrplRpcException extends RuntimeException implements LedgerDirectException
 {
     /**
      * @param string|null $error rippled's own error code when the node

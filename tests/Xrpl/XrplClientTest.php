@@ -6,7 +6,7 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Xrpl;
 
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\FakeHttpClient;
+use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplClient;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplRpcException;
 use InvalidArgumentException;

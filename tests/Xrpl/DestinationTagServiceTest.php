@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Tests\Xrpl;
 
-use Hardcastle\LedgerDirect\Core\Tests\Fixtures\InMemoryXrplTransactionRepository;
+use Hardcastle\LedgerDirect\Core\Testing\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagsExhaustedException;
 use PHPUnit\Framework\TestCase;

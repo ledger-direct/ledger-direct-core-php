@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Payment;
 
+use Hardcastle\LedgerDirect\Core\Clock\SystemClock;
+
 /**
  * The answer to "is this order paid?" — one of five states, derived from a PaymentIntent, a
  * SettlementPolicy and the clock. See INVARIANTS.md, "Payment status".
@@ -70,11 +72,12 @@ final readonly class PaymentStatus
      * sent real money, and the page has to say so before it talks about validity periods.
      * `expired` is reserved for "nothing there, and the rate is stale".
      *
-     * @param int|null $now unix timestamp; defaults to the current time. Injectable for tests.
+     * @param int|null $now unix timestamp; defaults to the wall clock. LedgerDirect::paymentStatus()
+     *     passes its injected clock; tests pass a fixed value.
      */
     public static function fromIntent(PaymentIntent $intent, SettlementPolicy $policy, ?int $now = null): self
     {
-        $now ??= time();
+        $now ??= (new SystemClock())->now()->getTimestamp();
 
         if ($policy->isSettled($intent)) {
             return new self(self::SETTLED, $intent->baseAsset, $intent->amountRequested, $intent->amountPaid, null, null);

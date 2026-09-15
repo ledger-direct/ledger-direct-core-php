@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Xrpl;
 
+use Hardcastle\LedgerDirect\Core\LedgerDirectException;
+
 use RuntimeException;
 
 /**
@@ -11,6 +13,6 @@ use RuntimeException;
  * guard against an unbounded retry loop, not an expected outcome given the
  * ~4.29 billion-value range.
  */
-final class DestinationTagsExhaustedException extends RuntimeException
+final class DestinationTagsExhaustedException extends RuntimeException implements LedgerDirectException
 {
 }

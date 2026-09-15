@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Payment;
 
+use Hardcastle\LedgerDirect\Core\Clock\SystemClock;
 use Hardcastle\LedgerDirect\Core\Port\ConfigProviderInterface;
 use Hardcastle\LedgerDirect\Core\Price\PriceService;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
 use InvalidArgumentException;
+use Psr\Clock\ClockInterface;
 
 /**
  * Composes PriceService + ConfigProviderInterface + DestinationTagService
@@ -25,11 +27,19 @@ final class PaymentIntentService
         'USDC' => 'usdc-payment',
     ];
 
+    private readonly ClockInterface $clock;
+
+    /**
+     * @param ClockInterface|null $clock what "now" is for the quote's expiry; the wall clock by
+     *     default, a frozen one in tests
+     */
     public function __construct(
         private readonly PriceService $priceService,
         private readonly DestinationTagService $destinationTagService,
         private readonly ConfigProviderInterface $configProvider,
+        ?ClockInterface $clock = null,
     ) {
+        $this->clock = $clock ?? new SystemClock();
     }
 
     /**
@@ -67,7 +77,7 @@ final class PaymentIntentService
             amountRequested: $priceQuote->amountRequested,
             destinationAccount: $destinationAccount,
             destinationTag: $destinationTag,
-            expiry: time() + $this->configProvider->getQuoteExpirySeconds(),
+            expiry: $this->clock->now()->getTimestamp() + $this->configProvider->getQuoteExpirySeconds(),
         );
     }
 
