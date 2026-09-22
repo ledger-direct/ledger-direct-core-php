@@ -11,7 +11,7 @@
 /MUSINGS.md
 
 # Handover documents from the adapter projects (working input, not public contract).
-# Matches the whole LedgerDirect-*.md family, not just *-Uebergabe.md: a handover
+# Matches the whole Handover-*.md family, not just *-Uebergabe.md: a handover
 # named anything else slipped past the narrower pattern once and shipped inside a
-# release tarball. Nothing the package publishes is named LedgerDirect-*.md.
-/LedgerDirect-*.md
+# release tarball. Nothing the package publishes is named Handover-*.md.
+/Handover-*.md
