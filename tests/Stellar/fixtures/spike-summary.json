@@ -1,0 +1,42 @@
+{
+  "merchant": "GCGEFYLIJXTISHBB3LENEJNGDBU7XHEI4F2PTLY4OSZ5Q5YF7ZWVNQIA",
+  "payer_and_issuer": "GDZN7JUZHAJEULYCSOQFON5DC26Z6XOH7AB45LIHLXQCQS5MFUW4QN5C",
+  "muxed": "MCGEFYLIJXTISHBB3LENEJNGDBU7XHEI4F2PTLY4OSZ5Q5YF7ZWVMAAAAAAAACP36ET2E",
+  "testusd": {
+    "code": "TESTUSD",
+    "issuer": "GDZN7JUZHAJEULYCSOQFON5DC26Z6XOH7AB45LIHLXQCQS5MFUW4QN5C"
+  },
+  "cases": {
+    "memoId": {
+      "hash": "cebc6a6e4ba40b0c1b8bf86e8b23301ac2a2f7335ca842ecdc8f9156e73322b9",
+      "ledger": 4829157
+    },
+    "muxed": {
+      "hash": "eeb71d4e41fda7e2ea0f2eafb4c32876babacaace277929a653a354c0fd2323e",
+      "ledger": 4829158
+    },
+    "pathPayment": {
+      "hash": "76087cf5335bcff8892748151be9ae3f42b2e41ead7fdfd562422df01680eb23",
+      "ledger": 4829159
+    },
+    "twoOps": {
+      "hash": "9a5a2cf4e28e18bc0848dff7a904c9e12b676ad8d7568a7c5ce7696990cce4a5",
+      "ledger": 4829160
+    },
+    "memoText": {
+      "hash": "d31e17ed8850c178e205315e1c8aaf5f2fbc190b4b43c448bc2b153cfdeacc82",
+      "ledger": 4829161
+    },
+    "trustline": {
+      "hash": "111b62b90baa871b9bf54b9e81fc00d4a057f04cb70de534f0ffdba492591a7a",
+      "ledger": 4829162
+    },
+    "issued": {
+      "hash": "5c5f9fe6de7e29a832cb8c7718125b9548291af52c40c1204aa97006936bafe1",
+      "ledger": 4829163
+    }
+  },
+  "horizon_version": "28.0.1-a70eb47f76985d372de3e59f4d75c7f8542752f7",
+  "history_latest_ledger": 4829162,
+  "rpc_latest": 4829163
+}
