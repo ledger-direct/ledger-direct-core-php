@@ -202,6 +202,150 @@ the bytes land is the platform's business, as with `XrplTransactionRepositoryInt
 - The fulfillment side (`delivered_amount`, matching, `withFulfillment()`) is untouched by any of
   this.
 
+## Stellar
+
+Stellar is the second chain. It gets its own sibling port, client, sync and composition root
+under `Core\Stellar\…` and `Core\Port\StellarPaymentRepositoryInterface` — **not** a generalized
+multi-chain interface: a port that has to serve both XRPL's ledger-index/marker pagination and
+Horizon's operation cursor would serve neither. What is shared is what was already chain-agnostic:
+`PaymentIntent`, `SettlementPolicy`, `PaymentStatus`, `ConfigProviderInterface` (with `$chain`),
+`SyncThrottle`, the oracle mechanics and the identifier permutation.
+
+### Names in the record
+
+- `chain` is **`STELLAR`**, `network` is `mainnet` | `testnet` as on XRPL.
+- `type` carries a chain prefix: `stellar-xlm-payment`, `stellar-usdc-payment`,
+  `stellar-eurc-payment`. XRPL's types stay unprefixed; without the prefix `usdc-payment` on the
+  two chains would be indistinguishable, and adapters map handlers by type.
+- `base_asset` is `XLM`, `USDC` or `EURC`. XLM is the chain's native asset
+  (`NATIVE_ASSET_BY_CHAIN['STELLAR'] = 'XLM'`), so `amount_requested` / `amount_paid` are a
+  float for XLM and `{currency, value, issuer}` for everything else — with the asset code in
+  **plain text** (`"USDC"`, `"EURC"`), never hex, and without XRPL's `USDC_CODE = 'USD'` quirk.
+  Stellar amounts on the wire are decimal strings with seven places; the record carries them as
+  plain decimals (`"12.34"`, not `"12.3400000"`).
+- `destination_tag` carries the **memo id**. The field name is an XRPL inheritance; the meaning —
+  a numeric identifier that ties a payment to an order — is the same, and a second field would
+  be a schema step for nothing.
+- `hash` is the transaction hash of the newest contributing payment; `ctid` is `null`, it is an
+  XRPL concept.
+
+### Identifiers
+
+The merchant's memo ids come from the **same permutation and the same range** as XRPL's
+destination tags — `10000`–`4294967295`, one counter per receiving account, random start,
+never 0 (`Core\Identity\SequencePermutation`, shared by `DestinationTagService` and
+`Stellar\MemoIdService`). Stellar's `MEMO_ID` is a `uint64`; the wider range buys nothing and
+would cost PHP's signed 64-bit integer and every adapter's column type.
+
+What an incoming payment is matched by, in this order (CAP-67 precedence):
+
+1. the muxed id, when the destination is a muxed account (`M…`, Horizon's `to_muxed_id`);
+2. otherwise the transaction's `MEMO_ID`;
+3. otherwise a `MEMO_TEXT` that is **exactly** the canonical decimal form of an id
+   (`^(0|[1-9][0-9]*)$`, no spaces, no leading zeros, no sign, at most `18446744073709551615`);
+4. otherwise the payment carries no identifier and is stored but never matched.
+
+Identifiers are handled as **decimal strings** end to end: PHP's `int` is signed 64-bit and a
+foreign memo or muxed id can reach `2^64 − 1`. The record's `destination_tag` stays an `int`
+(the merchant's own ids never exceed `2^32 − 1`); matching compares the canonical string form.
+The memo the customer is shown is the `MEMO_ID`; a muxed address is accepted on receipt but is
+not the primary instruction, since not every wallet supports it.
+
+### Payment source
+
+**Horizon first**, behind the internal `Stellar\PaymentSource` boundary; Stellar RPC follows as a
+second implementation before Horizon goes away. Endpoints are constants, as with
+`XrplClient::JSON_RPC_URLS`: `https://horizon.stellar.org` and `https://horizon-testnet.stellar.org`.
+SDF's public Horizon allows 3600 requests per hour and IP: the client must honour `429` and
+`Retry-After` rather than hammer, and the account inspector's answers are cached.
+
+The sync reads `GET /accounts/{destination}/payments?join=transactions` from the stored cursor
+and keeps only **`payment`, `path_payment_strict_send` and `path_payment_strict_receive`
+operations whose `to` is the receiving account**. Everything else the endpoint lists —
+`create_account` (the account's own funding shows up as the first record), `invoke_host_function`,
+`account_merge`, claimable balances — is skipped. For a path payment the credited amount is
+`amount`, what arrived, never `source_amount`.
+
+When RPC becomes the source it must read CAP-67 `transfer` **and** `mint` events to the
+receiving account: a payment sent by the asset's issuer is a `mint`, not a `transfer`. Both carry
+`to_muxed_id`, which is a `u64` for `MEMO_ID` and muxed destinations and a **string** for
+`MEMO_TEXT` — the canonical-form rule above applies there too.
+
+### Tables
+
+`ledger_direct_stellar_payment` and `ledger_direct_stellar_memo`, defined by
+`Core\Stellar\Schema` (`tables()` as data, `mysql($prefix)` as DDL), prefixed and created by the
+platform like the XRPL tables.
+
+- One row per **payment operation**, not per transaction: a Stellar transaction can carry
+  several payments, and the sum rule needs each one. The two operations of one transaction are two
+  rows with the same `hash`.
+- **Unique on `(hash, op_index)`**, not on the operation id. Operation ids (TOIDs) encode
+  ledger, transaction and operation position and **repeat after a testnet reset**; a unique
+  operation id would make a stale row from the previous epoch swallow a new, real payment as a
+  duplicate. The hash includes the network passphrase and the sequence number and does not repeat.
+- `payment_id` (`BIGINT UNSIGNED`, the TOID) orders rows and is the cursor: `getLastPaymentId()`
+  is `MAX(payment_id)` **per receiving account and network** — the XRPL lesson applied from the
+  start — and `findPayments()` returns `payment_id DESC`, tie-broken by primary key descending.
+  There is no separate `paging_token` column: on the payments endpoint it equals the operation id.
+- `memo_id` is `BIGINT UNSIGNED NULL` and holds the resolved identifier (muxed id, `MEMO_ID` or
+  canonical `MEMO_TEXT`), read back as a string. `amount` is a decimal string with up to seven
+  places; `asset_code` is the plain code (`XLM` for native) and `asset_issuer` is null for native.
+- `ledger_direct_stellar_memo` is the per-account counter, one row per receiving account,
+  `INT UNSIGNED`, random start, and it **must survive uninstall** — the same rule and reason as
+  the XRPL counter.
+
+### The testnet is not persistent, and Horizon does not say so
+
+The Stellar testnet is reset periodically. Unlike rippled, Horizon answers a cursor from the
+previous epoch with **HTTP 200 and no records** — there is no error to react to, and a sync
+would silently find nothing forever. The core therefore detects the reset itself: the cursor is a
+TOID whose upper 32 bits are the ledger sequence (`payment_id >> 32`). Before a cursor-based
+sync the client reads `history_latest_ledger` from Horizon's root document; if the cursor's
+ledger is **above** it, the cursor is from a previous epoch — a PSR-3 warning, then a sync with
+no cursor. The `(hash, op_index)` key keeps that from duplicating anything. RPC, for the record,
+rejects an out-of-range `startLedger` with an explicit error.
+
+### Conversion, oracles, pegs
+
+- XLM is quoted like XRP: Binance + Coingecko (`stellar`) + Kraken read generically, divergence
+  filter `0.05`, **5** decimal places, and the same native-asset settlement tolerance (default
+  0.15 %) — Stellar charges the fee to the sender, so the tolerance only covers rounding.
+- USDC and EURC are quoted to **2** places, Coingecko only (`usd-coin`, `euro-coin`). Fast paths:
+  USDC at `1.0` when the quote currency is `USD`, EURC at `1.0` when it is `EUR`. Stablecoin
+  rounding stays at two places: cross-chain USDT0-style normalisation to six places is harmless
+  at two, and raising the precision has to re-check that.
+- The rate cache key (`network`, `BASE`, `QUOTE`) is shared between chains on purpose: XRPL-USDC
+  and Stellar-USDC have the same fiat rate.
+
+### Preconditions the adapter checks
+
+A payment to an account without a trust line for the asset fails with `op_no_trust` and never
+arrives; one beyond the trust line's limit fails with `op_line_full`; an account that does not
+exist cannot receive at all. None of this is a sixth payment state — it happens before the order.
+`Stellar\AccountInspector` answers `accountExists()`, `hasTrustline()` (with the limit's headroom
+and the `is_authorized` flag) and `issuerFlags()` (`auth_revocable`, `auth_clawback_enabled`),
+read-only and cached. The adapter offers an asset only when it is priceable **and** the receiving
+account can take it, and shows the merchant the issuer's flags as a one-liner — a token whose
+issuer can freeze and claw back is worth knowing about in a product that sells self-custody.
+
+### Registry — security-critical
+
+`Stellar\StablecoinRegistry` holds USDC and EURC for mainnet and testnet. The issuers are copied
+from Circle's developer documentation at authoring time, with source and date in a comment, and a
+test checks them against a checked-in excerpt of that source. They are never merchant-configurable
+and never typed from memory. USDT0 is not in 0.8.0: it has no documented testnet issuer, so it
+could not pass the case catalogue.
+
+### Known gaps
+
+- **Soroban transfers.** USDC can arrive through the Stellar Asset Contract as an
+  `invoke_host_function` operation; Horizon reports it under `asset_balance_changes`. Not matched
+  in 0.8.0. CAP-67 events over RPC cover it, which is the main reason RPC follows as a source.
+- **Claimable balances** are not payments to the account and carry no memo; not matched.
+- **Testnet-only assets** for the case catalogue are self-issued (`TESTUSD` in the fixtures); the
+  registry never contains them.
+
 ## Amount encoding on XRPL
 
 The ledger's wire encoding is **not** the record's shape, and the core owns the translation:
