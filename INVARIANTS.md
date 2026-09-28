@@ -175,6 +175,33 @@ never `0` in `waiting`; a quote without an `expiry` never expires and has no cou
   and must not require a login — guest checkout is the rule in crypto payments. It returns the
   status and nothing else, so a guessed key reveals nothing the payment page doesn't show already.
 
+## Payment request — the QR code and the wallet apps
+
+One payment request per order, built by `Core\Payment\PaymentUri::forIntent()` on the server and
+identical on every platform; the page script only renders it as a QR code, and the wallet apps
+open it. The form is the one Xaman's parser accepts:
+
+```
+https://xrplf.org//send?to=<account>&dt=<tag>[&amount=<amount>][&currency=<hex>&issuer=<address>]
+```
+
+- `to` and `dt` always; `currency` and `issuer` for an issued currency, exactly as quoted in the
+  intent — never typed in, never merchant-editable (see StablecoinRegistry).
+- `amount` is **the amount the page shows**, passed in by the adapter: the shortfall while a
+  partial payment is in, the request otherwise. The core does not decide it, because only the
+  page knows what it displays, and the two must never differ. Verified with Xaman on the testnet
+  (2026-09-28, case PW-04): the value is read as the XRP decimal the page shows, not as drops,
+  and a token request takes currency and issuer over.
+- `AMOUNT_MODE` is `AMOUNT_DISPLAYED`. `AMOUNT_NONE` (address and tag only) stays available for a
+  platform whose wallets have not been verified; it is the safe default for an unverified wallet,
+  since a wrong unit is a money error.
+- Parameters are RFC 3986-encoded; the order is `to`, `dt`, `amount`, `currency`, `issuer`.
+
+`Core\Presentation\AccentColor` sits next to it as the one design rule every payment page
+shares: a merchant's accent colour is used only if it carries white text at WCAG 4.5 : 1;
+otherwise the default `#1f5eff`. Both classes are presentation helpers with no I/O — the core
+still knows no HTTP and renders no HTML.
+
 ## Rate caching
 
 Optional, and **off entirely** unless a PSR-16 cache is injected into `PriceService` — without one
