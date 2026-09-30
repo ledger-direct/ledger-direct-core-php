@@ -56,6 +56,10 @@ chains holds both roots. Its tables come from `Stellar\Schema`; XLM, USDC and EU
 `Stellar\StablecoinRegistry` (see `INVARIANTS.md`, "Stellar"). The opt-in integration suite has a
 Stellar half too (`--testsuite integration`, live Horizon testnet).
 
+`ChainCatalog` describes what the core can do as data — chains, networks, assets, account formats,
+the identifier a customer puts on a payment — so a platform's configuration screen renders one
+panel per chain from it instead of hand-coding every chain.
+
 ## Local setup
 
 The git repo root is the project root — `docker-compose.yml`, `src/`, `tests/` all live directly in
