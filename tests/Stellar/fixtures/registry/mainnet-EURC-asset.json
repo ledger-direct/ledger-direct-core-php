@@ -1,0 +1,51 @@
+{
+  "_links": {
+    "self": {
+      "href": "https://horizon.stellar.org/assets?asset_code=EURC&asset_issuer=GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2&cursor=&limit=10&order=asc"
+    },
+    "next": {
+      "href": "https://horizon.stellar.org/assets?asset_code=EURC&asset_issuer=GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2&cursor=EURC_GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2_credit_alphanum4&limit=10&order=asc"
+    },
+    "prev": {
+      "href": "https://horizon.stellar.org/assets?asset_code=EURC&asset_issuer=GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2&cursor=EURC_GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2_credit_alphanum4&limit=10&order=desc"
+    }
+  },
+  "_embedded": {
+    "records": [
+      {
+        "_links": {
+          "toml": {
+            "href": "https://circle.com/.well-known/stellar.toml"
+          }
+        },
+        "asset_type": "credit_alphanum4",
+        "asset_code": "EURC",
+        "asset_issuer": "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2",
+        "paging_token": "EURC_GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2_credit_alphanum4",
+        "contract_id": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+        "num_claimable_balances": 32,
+        "num_liquidity_pools": 116,
+        "num_contracts": 90,
+        "accounts": {
+          "authorized": 42027,
+          "authorized_to_maintain_liabilities": 0,
+          "unauthorized": 0
+        },
+        "claimable_balances_amount": "93.2895631",
+        "liquidity_pools_amount": "8575.6069061",
+        "contracts_amount": "759966.5650187",
+        "balances": {
+          "authorized": "3419548.4970045",
+          "authorized_to_maintain_liabilities": "0.0000000",
+          "unauthorized": "0.0000000"
+        },
+        "flags": {
+          "auth_required": false,
+          "auth_revocable": true,
+          "auth_immutable": false,
+          "auth_clawback_enabled": false
+        }
+      }
+    ]
+  }
+}

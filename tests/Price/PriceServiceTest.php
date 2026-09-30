@@ -343,6 +343,40 @@ final class PriceServiceTest extends TestCase
         $service->getCryptoPriceForOrder(91.9, 'EUR', 'RLUSD', 'mainnet');
     }
 
+    /**
+     * The chain-neutral half: rate and amount, no envelope. XLM is priced
+     * here; wrapping it into an intent is Stellar's business, and asking
+     * the XRPL method for it is refused rather than answered wrongly.
+     */
+    public function testQuoteAmountPricesXlmWithoutAnEnvelope(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('api.binance.com', new Response(200, [], '{"price":"0.40"}'));
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"stellar":{"usd":0.40}}'));
+        $client->queueResponse('api.kraken.com', new Response(200, [], '{"result":{"XXLMZUSD":{"c":["0.40","100"]}}}'));
+        $service = new PriceService($client, new HttpFactory(), new RecordingLogger());
+
+        $quote = $service->quoteAmount(0.88, 'USD', 'XLM', 'testnet');
+
+        self::assertSame('XLM', $quote->baseAsset);
+        self::assertSame('XLM/USD', $quote->pairing);
+        self::assertEqualsWithDelta(0.40, $quote->exchangeRate, 0.0001);
+        self::assertSame('2.20000', $quote->amount, 'five places, as a decimal string');
+    }
+
+    public function testTheXrplQuoteRefusesANonXrplAsset(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('api.binance.com', new Response(200, [], '{"price":"0.40"}'));
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"stellar":{"usd":0.40}}'));
+        $client->queueResponse('api.kraken.com', new Response(200, [], '{"result":{"XXLMZUSD":{"c":["0.40","100"]}}}'));
+        $service = new PriceService($client, new HttpFactory(), new RecordingLogger());
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('not an XRPL asset');
+        $service->getCryptoPriceForOrder(0.88, 'USD', 'XLM', 'testnet');
+    }
+
     public function testWithoutACacheEveryQuoteStillHitsTheOracles(): void
     {
         $client = new FakeHttpClient();

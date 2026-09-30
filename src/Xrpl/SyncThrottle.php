@@ -6,6 +6,7 @@ namespace Hardcastle\LedgerDirect\Core\Xrpl;
 
 use Hardcastle\LedgerDirect\Core\Clock\SystemClock;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentStatus;
+use Hardcastle\LedgerDirect\Core\Sync\LedgerSyncInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
@@ -88,13 +89,13 @@ final class SyncThrottle
      *
      * @return bool whether a sync actually ran
      */
-    public function syncIfDue(SyncService $sync, string $account, string $network): bool
+    public function syncIfDue(LedgerSyncInterface $sync, string $account, string $network): bool
     {
         if (!$this->shouldSync($network, $account)) {
             return false;
         }
 
-        $sync->syncTransactions($account, $network);
+        $sync->sync($account, $network);
         $this->markSynced($network, $account);
 
         return true;
