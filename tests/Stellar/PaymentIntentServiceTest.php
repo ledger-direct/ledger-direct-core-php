@@ -88,12 +88,41 @@ final class PaymentIntentServiceTest extends TestCase
         $service->quoteForOrder(10.0, 'USD', 'XLM');
     }
 
-    public function testIssuedAssetsAreNotPartOfThisSliceYet(): void
+    /**
+     * USDC on Stellar: the USD peg, two places, and the envelope with
+     * Circle's testnet issuer in plain text.
+     */
+    public function testAUsdcIntentCarriesTheStellarRegistrysEnvelope(): void
+    {
+        $service = $this->makeService(new FakeHttpClient(), new InMemoryStellarPaymentRepository(), new FakeConfigProvider());
+
+        $intent = $service->quoteForOrder(12.34, 'USD', 'USDC');
+
+        self::assertSame('stellar-usdc-payment', $intent->type);
+        self::assertSame(1.0, $intent->exchangeRate, 'USD peg, no oracle call');
+        self::assertSame(
+            ['currency' => 'USDC', 'value' => '12.34', 'issuer' => 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'],
+            $intent->amountRequested,
+        );
+    }
+
+    public function testAnEurcIntentUsesTheEurPeg(): void
+    {
+        $service = $this->makeService(new FakeHttpClient(), new InMemoryStellarPaymentRepository(), new FakeConfigProvider());
+
+        $intent = $service->quoteForOrder(19.99, 'EUR', 'EURC');
+
+        self::assertSame('stellar-eurc-payment', $intent->type);
+        self::assertSame('EURC/EUR', $intent->pairing);
+        self::assertSame(['currency' => 'EURC', 'value' => '19.99', 'issuer' => 'GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO'], $intent->amountRequested);
+    }
+
+    public function testAnAssetTheRegistryDoesNotKnowIsRefused(): void
     {
         $service = $this->makeService(new FakeHttpClient(), new InMemoryStellarPaymentRepository(), new FakeConfigProvider());
 
         $this->expectException(InvalidArgumentException::class);
-        $service->quoteForOrder(10.0, 'USD', 'USDC');
+        $service->quoteForOrder(10.0, 'USD', 'USDT0');
     }
 
     private function makeService(

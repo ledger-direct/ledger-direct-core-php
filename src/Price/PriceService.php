@@ -310,6 +310,10 @@ final class PriceService
                 new XlmPriceProvider($this->httpClient, $this->requestFactory, $this->logger),
                 XlmPriceProvider::ROUND_PLACES,
             ],
+            EurcPriceProvider::CRYPTO_CODE => [
+                new EurcPriceProvider($this->httpClient, $this->requestFactory, $this->logger),
+                EurcPriceProvider::ROUND_PLACES,
+            ],
             default => throw new InvalidArgumentException("Unsupported base_asset '{$baseAsset}'."),
         };
     }

@@ -28,6 +28,7 @@ use Psr\SimpleCache\CacheInterface;
 final class LedgerDirectStellar
 {
     private ?HorizonClient $horizonClient = null;
+    private ?AccountInspector $accountInspector = null;
     private ?PriceService $priceService = null;
     private ?SyncService $syncService = null;
     private ?MemoIdService $memoIdService = null;
@@ -95,6 +96,12 @@ final class LedgerDirectStellar
     public function horizonClient(): HorizonClient
     {
         return $this->horizonClient ??= new HorizonClient($this->httpClient, $this->requestFactory);
+    }
+
+    /** Trust lines, limits and issuer flags, cached over the same PSR-16 cache when there is one. */
+    public function accountInspector(): AccountInspector
+    {
+        return $this->accountInspector ??= new AccountInspector($this->horizonClient(), $this->logger, $this->cache);
     }
 
     public function priceService(): PriceService

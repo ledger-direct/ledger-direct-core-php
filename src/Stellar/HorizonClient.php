@@ -67,6 +67,25 @@ final class HorizonClient implements PaymentSourceInterface
         ];
     }
 
+    /**
+     * The account record — balances (trust lines), flags, sequence — or null
+     * when the account does not exist on the network.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function account(string $account, string $network): ?array
+    {
+        try {
+            return $this->get(self::baseUrl($network) . '/accounts/' . rawurlencode($account), $network);
+        } catch (HorizonException $exception) {
+            if ($exception->status === 404) {
+                return null;
+            }
+
+            throw $exception;
+        }
+    }
+
     public function latestLedger(string $network): int
     {
         $payload = $this->get(self::baseUrl($network) . '/', $network);

@@ -52,8 +52,9 @@ static state and ships no facade. Table DDL for your migration comes from `Xrpl\
 
 Stellar is a second chain with its own root, `Stellar\LedgerDirectStellar::create(...)`, taking
 the same cross-cutting objects plus a `StellarPaymentRepositoryInterface`; a shop accepting both
-chains holds both roots. Its tables come from `Stellar\Schema`. XLM is supported in this release;
-USDC and EURC on Stellar follow with the Stellar registry (see `INVARIANTS.md`, "Stellar").
+chains holds both roots. Its tables come from `Stellar\Schema`; XLM, USDC and EURC are supported, the issuers live in
+`Stellar\StablecoinRegistry` (see `INVARIANTS.md`, "Stellar"). The opt-in integration suite has a
+Stellar half too (`--testsuite integration`, live Horizon testnet).
 
 ## Local setup
 

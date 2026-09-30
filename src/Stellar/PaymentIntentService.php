@@ -17,8 +17,8 @@ use Psr\Clock\ClockInterface;
  * full Stellar PaymentIntent for an order — the sibling of
  * Payment\PaymentIntentService, with the same quote-and-refresh behaviour
  * and Stellar's names (INVARIANTS.md, "Stellar", Names in the record).
- *
- * XLM only for now: the issued assets arrive with the Stellar registry.
+ * XLM is a float; USDC and EURC get the plain-text envelope from the
+ * Stellar registry.
  */
 final class PaymentIntentService
 {
@@ -26,9 +26,13 @@ final class PaymentIntentService
 
     private const TYPE_BY_ASSET = [
         'XLM' => 'stellar-xlm-payment',
+        StablecoinRegistry::USDC => 'stellar-usdc-payment',
+        StablecoinRegistry::EURC => 'stellar-eurc-payment',
     ];
 
     private readonly ClockInterface $clock;
+
+    private readonly StablecoinRegistry $registry;
 
     public function __construct(
         private readonly PriceService $priceService,
@@ -37,6 +41,7 @@ final class PaymentIntentService
         ?ClockInterface $clock = null,
     ) {
         $this->clock = $clock ?? new SystemClock();
+        $this->registry = new StablecoinRegistry();
     }
 
     /**
@@ -69,7 +74,9 @@ final class PaymentIntentService
             quoteCurrency: $quote->quoteCurrency,
             pairing: $quote->pairing,
             exchangeRate: $quote->exchangeRate,
-            amountRequested: (float) $quote->amount,
+            amountRequested: $baseAsset === 'XLM'
+                ? (float) $quote->amount
+                : $this->registry->amount($baseAsset, $network, $quote->amount),
             destinationAccount: $destinationAccount,
             destinationTag: $memoId,
             expiry: $this->clock->now()->getTimestamp() + $this->configProvider->getQuoteExpirySeconds(),

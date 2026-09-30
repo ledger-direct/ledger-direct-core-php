@@ -360,11 +360,24 @@ issuer can freeze and claw back is worth knowing about in a product that sells s
 
 ### Registry — security-critical
 
-`Stellar\StablecoinRegistry` holds USDC and EURC for mainnet and testnet. The issuers are copied
-from Circle's developer documentation at authoring time, with source and date in a comment, and a
-test checks them against a checked-in excerpt of that source. They are never merchant-configurable
-and never typed from memory. USDT0 is not in 0.8.0: it has no documented testnet issuer, so it
-could not pass the case catalogue.
+`Stellar\StablecoinRegistry` holds USDC and EURC for mainnet and testnet. The issuers were copied
+from Circle's developer documentation on 2026-09-30, verified against Horizon the same day (the
+asset exists on its network under that issuer, held by thousands of accounts), and both the
+documentation excerpt and Horizon's answers are checked in under `tests/Stellar/fixtures/registry/`;
+`StablecoinRegistryTest` compares the constants with them. They are never merchant-configurable and
+never typed from memory. For control only:
+
+```
+USDC  mainnet  GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+USDC  testnet  GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+EURC  mainnet  GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2
+EURC  testnet  GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO
+```
+
+Observed on the same day: Circle's USDC issuers (both networks) and the EURC mainnet issuer are
+`auth_revocable` — the issuer can freeze a trust line; none has `auth_clawback_enabled`. That is
+what the adapter's issuer-flags one-liner shows. USDT0 is not in 0.8.0: it has no documented
+testnet issuer, so it could not pass the case catalogue.
 
 ### Known gaps
 
