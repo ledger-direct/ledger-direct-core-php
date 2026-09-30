@@ -86,6 +86,34 @@ final readonly class StellarPayment
     }
 
     /**
+     * The identifier an incoming payment carries, resolved in the contract's
+     * order: the muxed id when the destination is muxed, else a MEMO_ID,
+     * else a MEMO_TEXT that is exactly the canonical decimal form of an id.
+     * Anything else — a hash memo, a return memo, free text — is no
+     * identifier (INVARIANTS.md, "Stellar", Identifiers).
+     */
+    public static function identifierFrom(?string $toMuxedId, ?string $memoType, ?string $memo): ?string
+    {
+        if ($toMuxedId !== null && self::isCanonicalIdentifier($toMuxedId)) {
+            return $toMuxedId;
+        }
+
+        if ($memo === null) {
+            return null;
+        }
+
+        if ($memoType === 'id' && self::isCanonicalIdentifier($memo)) {
+            return $memo;
+        }
+
+        if ($memoType === 'text' && self::isCanonicalIdentifier($memo)) {
+            return $memo;
+        }
+
+        return null;
+    }
+
+    /**
      * Whether a string is an identifier in canonical decimal form: no sign,
      * no spaces, no leading zeros, within uint64. The only form a MEMO_TEXT
      * is accepted in, and the form every identifier is compared in.

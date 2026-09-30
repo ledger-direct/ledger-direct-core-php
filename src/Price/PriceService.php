@@ -94,6 +94,38 @@ final class PriceService
         string $baseAsset,
         string $network,
     ): PriceQuote {
+        $quote = $this->quoteAmount($total, $quoteCurrency, $baseAsset, $network);
+
+        $amountRequested = match ($baseAsset) {
+            XrpPriceProvider::CRYPTO_CODE => (float) $quote->amount,
+            RlusdPriceProvider::CRYPTO_CODE => $this->stablecoinRegistry->getRLUSDAmount($network, $quote->amount),
+            UsdcPriceProvider::CRYPTO_CODE => $this->stablecoinRegistry->getUSDCAmount($network, $quote->amount),
+            default => throw new InvalidArgumentException(
+                "'{$baseAsset}' is not an XRPL asset; use quoteAmount() and the chain's own envelope."
+            ),
+        };
+
+        return new PriceQuote(
+            baseAsset: $quote->baseAsset,
+            quoteCurrency: $quote->quoteCurrency,
+            pairing: $quote->pairing,
+            exchangeRate: $quote->exchangeRate,
+            amountRequested: $amountRequested,
+        );
+    }
+
+    /**
+     * Rate and amount only, for any asset the core can price — no chain
+     * envelope. This is what a chain's intent service builds on; XRPL's
+     * getCryptoPriceForOrder() is this plus the XRPL registry's wrapping.
+     * The amount is a decimal string at the asset's scale, rounded half-up.
+     */
+    public function quoteAmount(
+        float $total,
+        string $quoteCurrency,
+        string $baseAsset,
+        string $network,
+    ): AmountQuote {
         [$provider, $roundPlaces] = $this->providerFor($baseAsset);
 
         $exchangeRate = $this->exchangeRate($provider, $baseAsset, $quoteCurrency, $network);
@@ -101,18 +133,12 @@ final class PriceService
         $amount = BigDecimal::of((string) $total)
             ->dividedBy((string) $exchangeRate, $roundPlaces, self::halfUp());
 
-        $amountRequested = match ($baseAsset) {
-            XrpPriceProvider::CRYPTO_CODE => $amount->toFloat(),
-            RlusdPriceProvider::CRYPTO_CODE => $this->stablecoinRegistry->getRLUSDAmount($network, (string) $amount),
-            UsdcPriceProvider::CRYPTO_CODE => $this->stablecoinRegistry->getUSDCAmount($network, (string) $amount),
-        };
-
-        return new PriceQuote(
+        return new AmountQuote(
             baseAsset: $baseAsset,
             quoteCurrency: $quoteCurrency,
             pairing: $baseAsset . '/' . $quoteCurrency,
             exchangeRate: $exchangeRate,
-            amountRequested: $amountRequested,
+            amount: (string) $amount,
         );
     }
 
@@ -279,6 +305,10 @@ final class PriceService
             UsdcPriceProvider::CRYPTO_CODE => [
                 new UsdcPriceProvider($this->httpClient, $this->requestFactory, $this->logger),
                 UsdcPriceProvider::ROUND_PLACES,
+            ],
+            XlmPriceProvider::CRYPTO_CODE => [
+                new XlmPriceProvider($this->httpClient, $this->requestFactory, $this->logger),
+                XlmPriceProvider::ROUND_PLACES,
             ],
             default => throw new InvalidArgumentException("Unsupported base_asset '{$baseAsset}'."),
         };

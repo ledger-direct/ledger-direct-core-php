@@ -50,6 +50,11 @@ Services are built lazily and memoised. This is the object a Laravel service pro
 a facade points at, or a Symfony bundle registers as one service — the core itself holds no
 static state and ships no facade. Table DDL for your migration comes from `Xrpl\Schema`.
 
+Stellar is a second chain with its own root, `Stellar\LedgerDirectStellar::create(...)`, taking
+the same cross-cutting objects plus a `StellarPaymentRepositoryInterface`; a shop accepting both
+chains holds both roots. Its tables come from `Stellar\Schema`. XLM is supported in this release;
+USDC and EURC on Stellar follow with the Stellar registry (see `INVARIANTS.md`, "Stellar").
+
 ## Local setup
 
 The git repo root is the project root — `docker-compose.yml`, `src/`, `tests/` all live directly in

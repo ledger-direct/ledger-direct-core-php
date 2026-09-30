@@ -329,8 +329,10 @@ previous epoch with **HTTP 200 and no records** — there is no error to react t
 would silently find nothing forever. The core therefore detects the reset itself: the cursor is a
 TOID whose upper 32 bits are the ledger sequence (`payment_id >> 32`). Before a cursor-based
 sync the client reads `history_latest_ledger` from Horizon's root document; if the cursor's
-ledger is **above** it, the cursor is from a previous epoch — a PSR-3 warning, then a sync with
-no cursor. The `(hash, op_index)` key keeps that from duplicating anything. RPC, for the record,
+ledger is **more than `SyncService::RESET_LEDGER_MARGIN` (1000 ledgers) above** it, the cursor is
+from a previous epoch — a PSR-3 warning, then a sync with no cursor. The margin exists because the
+root document can lag the ledger Horizon has just served by one or two (observed in the M0 spike);
+a reset rewinds by millions, so the two cases never meet. The `(hash, op_index)` key keeps that from duplicating anything. RPC, for the record,
 rejects an out-of-range `startLedger` with an explicit error.
 
 ### Conversion, oracles, pegs
