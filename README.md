@@ -66,6 +66,10 @@ Requires PHP `^8.2`; CI runs the matrix `8.2` / `8.3` / `8.4`.
 
 ## Running tests
 
+How the whole of LedgerDirect is tested — core, package, the four plugins, the nightly end-to-end runs and
+the manual cases, with what each layer catches — is in [`docs/testing.md`](docs/testing.md). This section is
+about this repository.
+
 `vendor/bin/phpunit` (no flags — this is what CI runs) executes only the **unit** suite: no network
 access, all HTTP is against a fake PSR-18 client. There's also a separate, opt-in **integration**
 suite that hits the real Binance/Coingecko/Kraken APIs to check the oracle parsing still matches
