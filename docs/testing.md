@@ -43,9 +43,9 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 | `ledger-direct-core-php` 0.8.0 | 201 | opt-in (oracles) | PHP 8.2–8.4, lowest deps | — | — |
 | `ledger-direct-payment-ui` 0.1.1 | 7 (Node) | fixture page | tests, build, `dist` committed | — | fixture in a browser |
 | `ledger-direct-shopware6` 1.4.3 | 112 | 10 (dockware 6.7) | shopware-cli validate, PHPUnit | **yes** (`e2e.yml`, dockware) | PS-01…11, PW-01…04 proven on 1.4.0 |
-| `ledger-direct-prestashop` 0.5.0 | 47 | 52 (Flashlight 9.0) | syntax 8.2–8.4, CS, PHPStan 9.0/9.1, PHPUnit, release zip | **yes** (`e2e.yml`, Flashlight) | PS-01…11; PW open |
+| `ledger-direct-prestashop` 0.5.0 | 47 | 52 (Flashlight 9.0) | syntax 8.2–8.4, CS, PHPStan 9.0/9.1, PHPUnit, release zip | **yes** (`e2e.yml`, Flashlight) | PS-01…11; PW-04 proven |
 | `ledger-direct-magento2` 1.1.0 | 104 | smoke | lint, Magento2 CS, PHPUnit on 2.4.7/2.4.8 | no — no running shop in CI yet | PS-01…11; PW-04 proven |
-| `ledger-direct-woocommerce` 1.3.0 | with integration: 71 (WP test suite + WooCommerce) | | lint, WPCS, PHPStan, PHPUnit 8.2–8.4, Plugin Check | no — no running shop in CI yet | PS-01…11; PW open |
+| `ledger-direct-woocommerce` 1.3.0 | with integration: 71 (WP test suite + WooCommerce) | | lint, WPCS, PHPStan, PHPUnit 8.2–8.4, Plugin Check | no — no running shop in CI yet | PS-01…11; PW-04 proven |
 | `ledger-direct-e2e` | 16 (vitest) | — | typecheck, tests | drives the runs | — |
 
 "Proven" means ticked in a PR with order numbers and transaction hashes on the testnet.
@@ -71,8 +71,9 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 - **Browser wallets are manual** (PW-01, PW-02): no test drives a wallet extension.
 - **The testnet is not persistent.** A reset deletes every account; the harness detects it and asks
   for a new treasury.
-- **Core 0.8 ships `PaymentUri` and `AccentColor` for every platform, but the Xaman scan (PW-04) was
-  verified on Shopware and Magento only**; the request is the same code, the pages were not all scanned.
+- **The Xaman scan (PW-04) is proven on all four platforms** (Shopware 1.4.0, Magento 1.1.0, PrestaShop
+  0.5.0 and WooCommerce 1.3.0, XRP and RLUSD each): one `PaymentUri` in the core, every page scanned once.
+  PW-01…PW-03 (browser wallets, network hint, phone layout) are proven on Shopware only.
 
 ## Where the evidence lives
 
