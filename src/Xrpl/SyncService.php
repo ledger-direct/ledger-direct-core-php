@@ -362,6 +362,19 @@ final class SyncService
             }
         }
 
+        /*
+         * Checked here, before any adapter stores it: the column is sixteen
+         * characters wide, and not every database refuses a longer value —
+         * MySQL under INSERT IGNORE, or with the strict modes WordPress
+         * switches off, truncates silently. A CTID that is not a CTID is a
+         * malformed entry like a missing hash, skipped and logged.
+         */
+        if (!XrplTransaction::isValidCtid((string) $tx['ctid'])) {
+            throw new UnexpectedValueException(
+                "Synced transaction {$tx['hash']} carries a malformed ctid '{$tx['ctid']}' (expected C + 15 hex digits)."
+            );
+        }
+
         return new XrplTransaction(
             network: $network,
             ledgerIndex: (string) $tx['ledger_index'],

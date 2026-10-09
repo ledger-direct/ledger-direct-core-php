@@ -12,6 +12,17 @@ use UnexpectedValueException;
 
 final class XrplTransactionTest extends TestCase
 {
+    public function testACtidIsCPlusFifteenUppercaseHexDigits(): void
+    {
+        self::assertTrue(XrplTransaction::isValidCtid('C000006400000001'));
+        self::assertTrue(XrplTransaction::isValidCtid('C0035A5900030000'));
+        self::assertTrue(XrplTransaction::isValidCtid('C18FA505003A5359'), 'a Xahau mainnet CTID has the same form');
+
+        foreach (['C0000000000000000000000', 'c000006400000001', 'C00000640000000', 'C00000640000000G', '', '0035A5900030000'] as $bad) {
+            self::assertFalse(XrplTransaction::isValidCtid($bad), var_export($bad, true));
+        }
+    }
+
     public function testReadsAnXrpDeliveredAmountAsAFloat(): void
     {
         $transaction = $this->transaction(['delivered_amount' => '15063780']);

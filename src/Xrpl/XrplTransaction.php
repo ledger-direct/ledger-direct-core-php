@@ -15,6 +15,19 @@ use UnexpectedValueException;
 final readonly class XrplTransaction
 {
     /**
+     * A Compact Transaction ID (XLS-37): "C" followed by 15 hex digits —
+     * 7 for the ledger index, 4 for the transaction index, 4 for the
+     * network id. Sixteen characters, always. The transaction table's
+     * `tx_ctid` column is VARCHAR(16) for exactly this.
+     */
+    public const CTID_PATTERN = '/^C[0-9A-F]{15}$/';
+
+    public static function isValidCtid(string $ctid): bool
+    {
+        return preg_match(self::CTID_PATTERN, $ctid) === 1;
+    }
+
+    /**
      * @param array<string, mixed> $meta
      * @param array<string, mixed> $tx
      */

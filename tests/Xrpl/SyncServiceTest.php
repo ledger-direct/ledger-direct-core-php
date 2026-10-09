@@ -225,6 +225,35 @@ final class SyncServiceTest extends TestCase
         self::assertSame('warning', $logger->records()[0]['level']);
     }
 
+    /**
+     * The tx_ctid column is sixteen characters, and not every database
+     * refuses a longer value — MySQL under INSERT IGNORE or without strict
+     * mode truncates silently. So the core refuses it before storage, the
+     * way it refuses an entry with a missing hash.
+     */
+    public function testSkipsATransactionWithAMalformedCtidInsteadOfLettingADatabaseTruncateIt(): void
+    {
+        [$client, $repository, $service, $logger] = $this->makeService();
+
+        $overlong = $this->rawTx(hash: 'HASH_OVERLONG', account: 'rSender', destination: self::OWN_ADDRESS);
+        $overlong['tx']['ctid'] = 'C0000000000000000000000';
+        $lowercase = $this->rawTx(hash: 'HASH_LOWERCASE', account: 'rSender', destination: self::OWN_ADDRESS);
+        $lowercase['tx']['ctid'] = 'c000006400000001';
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([
+            $overlong,
+            $lowercase,
+            $this->rawTx(hash: 'HASH_VALID', account: 'rSender', destination: self::OWN_ADDRESS),
+        ]));
+
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $hashes = array_map(static fn (XrplTransaction $t): string => $t->hash, $repository->storedTransactions());
+        self::assertSame(['HASH_VALID'], $hashes);
+        self::assertSame(2, $logger->count());
+        self::assertStringContainsString('malformed ctid', $logger->records()[0]['context']['exception']);
+    }
+
     public function testFindTransactionsReturnsEveryCandidateNewestFirst(): void
     {
         [, $repository, $service] = $this->makeService();
