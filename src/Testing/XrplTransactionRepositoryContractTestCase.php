@@ -40,7 +40,7 @@ abstract class XrplTransactionRepositoryContractTestCase extends TestCase
             network: $network,
             ledgerIndex: $ledgerIndex,
             hash: $hash,
-            ctid: 'C0000000000000000000000',
+            ctid: 'C000006400000001',
             account: 'rSender',
             destination: $destination,
             destinationTag: $destinationTag,

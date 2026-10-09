@@ -645,7 +645,7 @@ final class SyncServiceTest extends TestCase
             'tx' => array_filter([
                 'ledger_index' => 100,
                 'hash' => $hash,
-                'ctid' => 'C0000000000000000000000',
+                'ctid' => 'C000006400000001',
                 'Account' => $account,
                 'Destination' => $destination,
                 'DestinationTag' => $destinationTag,
@@ -670,7 +670,7 @@ final class SyncServiceTest extends TestCase
             network: $network,
             ledgerIndex: $ledgerIndex,
             hash: $hash,
-            ctid: 'C0000000000000000000000',
+            ctid: 'C000006400000001',
             account: 'rSender',
             destination: $destination,
             destinationTag: $destinationTag,

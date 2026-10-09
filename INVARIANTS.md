@@ -49,7 +49,7 @@ Field names are literal and identical across all plugins:
 | `destination_tag` | |
 | `expiry` | |
 | `hash` | See [Tables](#tables) — unique per transaction. |
-| `ctid` | XRPL Compact Transaction ID — unlike `hash`, self-describing (encodes ledger index, transaction index, network id), so it disambiguates across networks. Set alongside `hash` once the payment is fulfilled; used to verify the transaction actually went through. **XRPL-specific, not a general blockchain concept** — optional/nullable so a future non-`XRPL` `chain` can fulfill without it. |
+| `ctid` | XRPL Compact Transaction ID — unlike `hash`, self-describing (encodes ledger index, transaction index, network id), so it disambiguates across networks. Set alongside `hash` once the payment is fulfilled; used to verify the transaction actually went through. **XRPL-specific, not a general blockchain concept** — optional/nullable so a future non-`XRPL` `chain` can fulfill without it. Stored in the transaction table as column `tx_ctid`, see [Tables](#tables). |
 | `amount_paid` / `delivered_amount` | Same shape rule as `amount_requested` — **decoded**, not the raw ledger encoding: see [Amount encoding](#amount-encoding-on-xrpl). |
 
 ## Conversion & rounding
@@ -286,6 +286,14 @@ currency code is still the 40-character USDC representation.
   `XrplTransactionRepositoryInterface`, so applying the prefix is 100% the adapter's concern and
   nothing needs to be injected into the core.
 - Unique index on `hash`.
+- The CTID is stored in a column named **`tx_ctid`** (`VARCHAR(16) NOT NULL`), not `ctid`.
+  PostgreSQL gives every table a system column called `ctid`, and no user column may take that
+  name, quoted or not — a `ctid` column makes the table impossible to create there. The record
+  field in a `PaymentIntent` stays `ctid` (see [Metadata fields](#metadata-fields)); the column
+  and the field are named differently on purpose, and must not be "aligned".
+- **No column name in any chain's schema may be a PostgreSQL system column name**: `tableoid`,
+  `xmin`, `cmin`, `xmax`, `cmax`, `ctid` (`Schema::POSTGRES_SYSTEM_COLUMNS`). The schema tests
+  enforce it, for every table the core describes.
 - `ledger_direct_xrpl_tx` carries a **`network` column** (`VARCHAR(16) NOT NULL`, `'mainnet'` |
   `'testnet'`) with an index on `(destination, network, ledger_index)`. A ledger index only means
   anything within one network, so the sync cursor

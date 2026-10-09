@@ -83,7 +83,7 @@ final class XrplTransactionTest extends TestCase
             ledgerIndex: '100',
             network: 'testnet',
             hash: 'HASH',
-            ctid: 'C0000000000000000000000',
+            ctid: 'C000006400000001',
             account: 'rSender',
             destination: 'rDestination',
             destinationTag: 42,
