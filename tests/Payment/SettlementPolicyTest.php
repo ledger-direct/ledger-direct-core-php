@@ -151,8 +151,30 @@ final class SettlementPolicyTest extends TestCase
     }
 
     /**
+     * The other asset class is the wrong asset too: a token on an XRP quote, XRP on a token
+     * quote. Nothing is credited, the whole request is still due — the same verdict as for a
+     * wrong issuer, so every page explains it the same way.
+     */
+    public function testAPaymentInTheOtherAssetClassIsTheWrongAsset(): void
+    {
+        $policy = new SettlementPolicy();
+
+        $tokenForXrp = $this->xrpQuote(0.80674)->withFulfillment('H', self::USDC + ['value' => '0.80']);
+        self::assertTrue($policy->isWrongAsset($tokenForXrp));
+        self::assertFalse($policy->isSettled($tokenForXrp));
+        self::assertSame('0', $policy->creditedValue($tokenForXrp));
+        self::assertSame('0.80674', $policy->shortfall($tokenForXrp));
+
+        $xrpForToken = $this->usdcQuote('39.00')->withFulfillment('H', 39.0);
+        self::assertTrue($policy->isWrongAsset($xrpForToken));
+        self::assertFalse($policy->isSettled($xrpForToken));
+        self::assertSame('0', $policy->creditedValue($xrpForToken));
+        self::assertSame('39', $policy->shortfall($xrpForToken));
+    }
+
+    /**
      * There is no issuer or currency code on a native amount, so there is nothing to mismatch —
-     * an XRP payment can be too small, but never the wrong asset.
+     * an XRP payment on an XRP quote can be too small, but never the wrong asset.
      */
     public function testANativeAmountIsNeverTheWrongAsset(): void
     {

@@ -50,7 +50,7 @@ Field names are literal and identical across all plugins:
 | `expiry` | |
 | `hash` | See [Tables](#tables) — unique per transaction. |
 | `ctid` | XRPL Compact Transaction ID — unlike `hash`, self-describing (encodes ledger index, transaction index, network id), so it disambiguates across networks. Set alongside `hash` once the payment is fulfilled; used to verify the transaction actually went through. **XRPL-specific, not a general blockchain concept** — optional/nullable so a future non-`XRPL` `chain` can fulfill without it. |
-| `amount_paid` / `delivered_amount` | Same shape rule as `amount_requested` — **decoded**, not the raw ledger encoding: see [Amount encoding](#amount-encoding-on-xrpl). |
+| `amount_paid` / `delivered_amount` | A float or a full `IssuedCurrencyAmount` — **whichever the ledger delivered**, not bound to the shape of `amount_requested`: a token sent for an XRP order (or XRP for a token order) is recorded as it arrived, so the page can name it (since 0.8.1; before, such a payment was never recorded). **Decoded**, not the raw ledger encoding: see [Amount encoding](#amount-encoding-on-xrpl). |
 
 ## Conversion & rounding
 
@@ -77,22 +77,23 @@ the intent:
   shortfall settles. "Quoted asset" means: for a native asset every native amount on the tag, for
   an issued currency only those with the quoted `currency` **and** `issuer` — the same rule
   `SettlementPolicy::isWrongAsset()` states as a verdict, used here as a filter.
-- A candidate in the right class but with another currency or another issuer does **not** count
-  towards the sum. It becomes the fulfillment — alone, newest first — only when **nothing** in
-  the quoted asset has arrived, so the platform can show `wrong_asset` with the delivered amount.
-  As soon as one payment in the quoted asset exists, only those count and the foreign ones are
-  logged.
+- A candidate in another asset — the other asset class (a token on a native quote, or the native
+  asset on a token quote), another currency code, or another issuer — does **not** count towards
+  the sum. It becomes the fulfillment — alone, newest first — only when **nothing** in the quoted
+  asset has arrived, so the platform can show `wrong_asset` with the delivered amount. As soon as
+  one payment in the quoted asset exists, only those count and the foreign ones are logged.
 - `hash` and `ctid` on the intent name the **newest contributing** transaction; schema v1 carries
   no list. The full list is on the `Fulfillment` and always recoverable via `findTransactions()`.
 - No time filter: the intent has no creation timestamp, and the tag's uniqueness (random counter
   start since 0.4) is the guarantee that everything on it belongs to this order.
-- Unchanged: a class mismatch (a native float on an issued-currency quote or vice versa), a
-  candidate that delivered nothing measurable (not a Payment) and an unreadable delivered amount
-  (the ledger's `"unavailable"`) are skipped and logged — never a reason to abort, and never handed
-  to `withFulfillment()`, which rejects the shape outright.
-- `SyncService::findTransactionFor()` — the single newest candidate in the quoted asset class — is
-  **deprecated since 0.6.0** and keeps its old behaviour until it is removed in 1.0. An adapter on
-  it never adds partial payments up.
+- Unchanged: a candidate that delivered nothing measurable (not a Payment) and an unreadable
+  delivered amount (the ledger's `"unavailable"`) are skipped and logged — never a reason to abort.
+  A class mismatch is **not** skipped any more (0.8.1): until then a customer who sent RLUSD for an
+  XRP order saw "waiting" forever while the money sat on the tag, because the candidate was thrown
+  away before `SettlementPolicy` could call it the wrong asset.
+- `SyncService::findTransactionFor()` — the single newest candidate in the quoted asset class, the
+  other class still skipped — is **deprecated since 0.6.0** and keeps its old behaviour until it is
+  removed in 1.0. An adapter on it never adds partial payments up.
 
 - A `PaymentIntent` without `amount_paid` is never settled.
 - **Native asset** (e.g. XRP): settled when `amount_paid >= amount_requested × (1 − tolerance)`. The
@@ -129,7 +130,7 @@ Exactly five states, each of which a payment page must be able to show:
 |---|---|---|
 | `waiting` | Nothing arrived, quote still valid | `seconds_left` |
 | `partial` | Arrived in the quoted asset, does not settle — `amount_paid` is the **sum** of every payment in the quoted asset on this tag | `amount_paid`, `shortfall` |
-| `wrong_asset` | Arrived, but another currency or another issuer | `amount_paid`, `shortfall` |
+| `wrong_asset` | Arrived, but another asset: the other asset class (a token for an XRP request or XRP for a token request), another currency code, or another issuer | `amount_paid`, `shortfall` |
 | `settled` | Paid — the only terminal state | `amount_paid` |
 | `expired` | Nothing arrived, quote expired | — |
 

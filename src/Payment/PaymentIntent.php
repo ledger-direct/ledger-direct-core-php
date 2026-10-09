@@ -58,7 +58,11 @@ final readonly class PaymentIntent
         self::assertAmountShape($chain, $baseAsset, $amountRequested, 'amount_requested');
 
         if ($amountPaid !== null) {
-            self::assertAmountShape($chain, $baseAsset, $amountPaid, 'amount_paid');
+            // What arrived is recorded as it arrived: a token on a native quote
+            // (or XRP on a token quote) is a real payment attempt the page has
+            // to name, so the shape is not bound to the request's. It only has
+            // to be a well-formed amount; SettlementPolicy says it credits nothing.
+            self::assertAmountWellFormed($amountPaid, 'amount_paid');
         }
     }
 
@@ -248,10 +252,19 @@ final readonly class PaymentIntent
             );
         }
 
+        self::assertAmountWellFormed($amount, $field);
+    }
+
+    /**
+     * A float, or an IssuedCurrencyAmount with all three keys - whichever
+     * asset class it is.
+     */
+    private static function assertAmountWellFormed(float|array $amount, string $field): void
+    {
         if (is_array($amount)) {
             foreach (['currency', 'value', 'issuer'] as $key) {
                 if (!array_key_exists($key, $amount)) {
-                    throw new InvalidArgumentException("{$field} is missing '{$key}' for base_asset {$baseAsset}.");
+                    throw new InvalidArgumentException("{$field} is missing '{$key}'.");
                 }
             }
         }
