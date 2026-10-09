@@ -546,7 +546,7 @@ final class SyncServiceTest extends TestCase
         self::assertSame('0.3', $service->findFulfillmentFor($this->rlusdIntent('1.00'))?->amountPaid['value']);
     }
 
-    public function testFindFulfillmentForSkipsWhatFindTransactionForSkippedAndSumsTheRest(): void
+    public function testFindFulfillmentForSkipsNoisePutsTheOtherClassAsideAndSumsTheRest(): void
     {
         [, $repository, $service, $logger] = $this->makeService();
 
@@ -562,8 +562,75 @@ final class SyncServiceTest extends TestCase
 
         self::assertSame(1.0, $fulfillment?->amountPaid);
         self::assertSame(['HASH_0_7', 'HASH_0_3'], array_map(static fn (XrplTransaction $t): string => $t->hash, $fulfillment->transactions));
-        // Newest first: other class (850), unavailable (800), escrow (700), then the sum.
-        self::assertSame(['warning', 'warning', 'debug', 'info'], array_column($logger->records(), 'level'));
+        // Newest first: unavailable (800), escrow (700); then the sum, then the
+        // token put aside because payments in the quoted asset exist.
+        self::assertSame(['warning', 'debug', 'info', 'warning'], array_column($logger->records(), 'level'));
+        self::assertSame('HASH_OTHER_CLASS', $logger->records()[3]['context']['hash']);
+    }
+
+    /**
+     * The case that used to vanish: an XRP order paid with a token (or a
+     * token order paid with XRP). The money is on the tag, the wallet said
+     * success, and the page said "waiting" forever because the sync threw
+     * the candidate away as the wrong class. It is a wrong-asset payment
+     * like any other: nothing credited, the whole request still due.
+     */
+    public function testATokenAloneOnANativeQuoteIsTheFulfillmentSoWrongAssetIsReachableAcrossClasses(): void
+    {
+        [, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->issuedPayment('HASH_RLUSD_FOR_XRP', ledgerIndex: '900', value: '0.80'),
+        ]);
+
+        $intent = $this->xrpIntent(0.80674);
+        $fulfillment = $service->findFulfillmentFor($intent);
+
+        self::assertNotNull($fulfillment);
+        self::assertSame('HASH_RLUSD_FOR_XRP', $fulfillment->transactions[0]->hash);
+        self::assertSame(self::RLUSD_ISSUER, $fulfillment->amountPaid['issuer'], 'the delivered asset, unchanged');
+
+        $status = PaymentStatus::fromIntent($fulfillment->applyTo($intent), new SettlementPolicy());
+        self::assertSame(PaymentStatus::WRONG_ASSET, $status->state());
+        self::assertSame(0.80674, $status->toArray()['shortfall'], 'the whole request, in the requested shape');
+        self::assertSame('0.80', $status->toArray()['amount_paid']['value']);
+    }
+
+    public function testXrpAloneOnATokenQuoteIsTheFulfillmentSoWrongAssetIsReachableAcrossClasses(): void
+    {
+        [, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->xrpPayment('HASH_XRP_FOR_RLUSD', ledgerIndex: '900', drops: '10000000'),
+        ]);
+
+        $intent = $this->rlusdIntent('10.00');
+        $fulfillment = $service->findFulfillmentFor($intent);
+
+        self::assertNotNull($fulfillment);
+        self::assertSame(10.0, $fulfillment->amountPaid);
+
+        $status = PaymentStatus::fromIntent($fulfillment->applyTo($intent), new SettlementPolicy());
+        self::assertSame(PaymentStatus::WRONG_ASSET, $status->state());
+        self::assertSame('10', $status->toArray()['shortfall']['value']);
+        self::assertSame(self::RLUSD_ISSUER, $status->toArray()['shortfall']['issuer']);
+        self::assertSame(10.0, $status->toArray()['amount_paid']);
+    }
+
+    public function testOnceTheQuotedClassArrivesOnlyItCountsEvenIfTheOtherClassCameFirst(): void
+    {
+        [, $repository, $service] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->issuedPayment('HASH_RLUSD_FIRST', ledgerIndex: '800', value: '0.80'),
+            $this->xrpPayment('HASH_XRP_LATER', ledgerIndex: '900', drops: '806740'),
+        ]);
+
+        $intent = $this->xrpIntent(0.80674);
+        $fulfilled = $service->findFulfillmentFor($intent)?->applyTo($intent);
+
+        self::assertSame('HASH_XRP_LATER', $fulfilled?->hash);
+        self::assertTrue((new SettlementPolicy())->isSettled($fulfilled));
     }
 
     public function testFindFulfillmentForReturnsNullWithoutCandidates(): void

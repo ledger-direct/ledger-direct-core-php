@@ -142,6 +142,24 @@ final class PaymentStatusTest extends TestCase
         ], $status->toArray()['shortfall']);
     }
 
+    /**
+     * Across asset classes the shortfall keeps the requested shape: a float for the XRP order
+     * paid with a token, the quoted envelope for the token order paid with XRP. amount_paid is
+     * the delivered asset either way, so the page can name it.
+     */
+    public function testAPaymentInTheOtherAssetClassIsWrongAssetWithTheShortfallInTheRequestedShape(): void
+    {
+        $tokenForXrp = $this->derive($this->xrpQuote(0.80674)->withFulfillment('H', self::USDC + ['value' => '0.80']));
+        self::assertSame(PaymentStatus::WRONG_ASSET, $tokenForXrp->state());
+        self::assertSame(self::USDC + ['value' => '0.80'], $tokenForXrp->toArray()['amount_paid']);
+        self::assertSame(0.80674, $tokenForXrp->toArray()['shortfall']);
+
+        $xrpForToken = $this->derive($this->usdcQuote('39.00')->withFulfillment('H', 39.0));
+        self::assertSame(PaymentStatus::WRONG_ASSET, $xrpForToken->state());
+        self::assertSame(39.0, $xrpForToken->toArray()['amount_paid']);
+        self::assertSame(['currency' => self::USDC['currency'], 'value' => '39', 'issuer' => self::USDC['issuer']], $xrpForToken->toArray()['shortfall']);
+    }
+
     public function testAWrongIssuerIsWrongAssetToo(): void
     {
         $usdcFromSomebodyElse = ['currency' => self::USDC['currency'], 'issuer' => 'rSomebodyElse', 'value' => '39'];
