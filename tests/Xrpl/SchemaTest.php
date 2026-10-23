@@ -19,7 +19,7 @@ final class SchemaTest extends TestCase
         $columns = array_column($tx['columns'], null, 'name');
 
         self::assertSame(
-            ['id', 'network', 'ledger_index', 'hash', 'ctid', 'account', 'destination', 'destination_tag', 'date', 'meta', 'tx'],
+            ['id', 'network', 'ledger_index', 'hash', 'tx_ctid', 'account', 'destination', 'destination_tag', 'date', 'meta', 'tx'],
             array_keys($columns),
         );
 
@@ -33,9 +33,31 @@ final class SchemaTest extends TestCase
         self::assertTrue($columns['destination_tag']['unsigned']);
         self::assertTrue($columns['destination_tag']['nullable']);
 
+        // A real CTID is 16 characters: "C", 7 hex ledger index, 4 transaction index, 4 network id.
+        self::assertSame(['type' => 'string', 'length' => 16, 'nullable' => false], self::shape($columns['tx_ctid']));
+
         self::assertSame(['hash'], $tx['unique']['uniq_ledger_direct_hash']);
         self::assertSame(['destination', 'destination_tag'], $tx['indexes']['idx_ledger_direct_destination']);
         self::assertSame(['destination', 'network', 'ledger_index'], $tx['indexes']['idx_ledger_direct_cursor']);
+    }
+
+    /**
+     * PostgreSQL gives every table the system columns tableoid, xmin, cmin,
+     * xmax, cmax and ctid, and no user column may take those names — quoting
+     * does not help. The transaction table once had a `ctid` column and could
+     * not be created on PostgreSQL at all.
+     */
+    public function testNoColumnIsAPostgresSystemColumn(): void
+    {
+        foreach (Schema::tables() as $table => $definition) {
+            foreach ($definition['columns'] as $column) {
+                self::assertNotContains(
+                    strtolower($column['name']),
+                    Schema::POSTGRES_SYSTEM_COLUMNS,
+                    "{$table}.{$column['name']} is a PostgreSQL system column name",
+                );
+            }
+        }
     }
 
     public function testTheCounterTableIsOneUnsignedRowPerAccount(): void
@@ -49,9 +71,9 @@ final class SchemaTest extends TestCase
     }
 
     /**
-     * The PrestaShop adapter's DDL is the reference — the one adapter whose
-     * schema carried every 0.4 requirement — so the MySQL output has to
-     * match it apart from prefix and engine.
+     * The PrestaShop adapter's DDL was the reference — the one adapter whose
+     * schema carried every 0.4 requirement — so the MySQL output matches it
+     * apart from prefix, engine and the `tx_ctid` column the adapters follow.
      */
     public function testMysqlDdlMatchesThePrestaShopReference(): void
     {
@@ -62,6 +84,8 @@ final class SchemaTest extends TestCase
         self::assertStringContainsString('`network` VARCHAR(16) NOT NULL', $tx);
         self::assertStringContainsString('`ledger_index` BIGINT UNSIGNED NOT NULL', $tx);
         self::assertStringContainsString('`hash` VARCHAR(64) NOT NULL', $tx);
+        self::assertStringContainsString('`tx_ctid` VARCHAR(16) NOT NULL', $tx);
+        self::assertStringNotContainsString('`ctid`', $tx);
         self::assertStringContainsString('`destination_tag` INT UNSIGNED NULL DEFAULT NULL', $tx);
         self::assertStringContainsString('`meta` LONGTEXT NOT NULL', $tx);
         self::assertStringContainsString('PRIMARY KEY (`id`)', $tx);

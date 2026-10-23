@@ -287,6 +287,18 @@ currency code is still the 40-character USDC representation.
   `XrplTransactionRepositoryInterface`, so applying the prefix is 100% the adapter's concern and
   nothing needs to be injected into the core.
 - Unique index on `hash`.
+- The CTID is stored in a column named **`tx_ctid`** (`VARCHAR(16) NOT NULL`), not `ctid`. The
+  core refuses a CTID that is not `C` plus 15 hex digits (`XrplTransaction::CTID_PATTERN`) when it
+  hydrates a synced transaction — skipped and logged like any malformed entry — so no adapter's
+  database ever gets to truncate one silently (MySQL does under `INSERT IGNORE`, or with the strict
+  modes WordPress switches off).
+  PostgreSQL gives every table a system column called `ctid`, and no user column may take that
+  name, quoted or not — a `ctid` column makes the table impossible to create there. The record
+  field in a `PaymentIntent` stays `ctid` (see [Metadata fields](#metadata-fields)); the column
+  and the field are named differently on purpose, and must not be "aligned".
+- **No column name in any chain's schema may be a PostgreSQL system column name**: `tableoid`,
+  `xmin`, `cmin`, `xmax`, `cmax`, `ctid` (`Schema::POSTGRES_SYSTEM_COLUMNS`). The schema tests
+  enforce it, for every table the core describes.
 - `ledger_direct_xrpl_tx` carries a **`network` column** (`VARCHAR(16) NOT NULL`, `'mainnet'` |
   `'testnet'`) with an index on `(destination, network, ledger_index)`. A ledger index only means
   anything within one network, so the sync cursor
