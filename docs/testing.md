@@ -42,11 +42,11 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 |---|---|---|---|---|---|
 | `ledger-direct-core-php` 0.8.1 | 207 | opt-in (oracles) | PHP 8.2–8.4, lowest deps | — | — |
 | `ledger-direct-payment-ui` 0.1.1 | 7 (Node) | fixture page | tests, build, `dist` committed | — | fixture in a browser |
-| `ledger-direct-shopware6` 1.4.3 | 112 | 10 (dockware 6.7) | shopware-cli validate, PHPUnit | **yes** (`e2e.yml`, dockware) | PS-01…11, PW-01…04 proven on 1.4.0 |
-| `ledger-direct-prestashop` 0.5.0 | 47 | 52 (Flashlight 9.0) | syntax 8.2–8.4, CS, PHPStan 9.0/9.1, PHPUnit, release zip | **yes** (`e2e.yml`, Flashlight) | PS-01…11; PW-04 proven |
-| `ledger-direct-magento2` 1.1.0 | 104 | smoke | lint, Magento2 CS, PHPUnit on 2.4.7/2.4.8 | no — no running shop in CI yet | PS-01…11; PW-04 proven |
-| `ledger-direct-woocommerce` 1.3.0 | with integration: 71 (WP test suite + WooCommerce) | | lint, WPCS, PHPStan, PHPUnit 8.2–8.4, Plugin Check | no — no running shop in CI yet | PS-01…11; PW-04 proven |
-| `ledger-direct-e2e` | 16 (vitest) | — | typecheck, tests | drives the runs | — |
+| `ledger-direct-shopware6` 1.4.4 | 112 | 10 (dockware 6.7) | shopware-cli validate, PHPUnit | **yes** (`e2e.yml`, dockware) | PS-01…11, PW-01…04 proven on 1.4.0 |
+| `ledger-direct-prestashop` 0.5.1 | 47 | 52 (Flashlight 9.0) | syntax 8.2–8.4, CS, PHPStan 9.0/9.1, PHPUnit, release zip | **yes** (`e2e.yml`, Flashlight) | PS-01…11; PW-04 proven |
+| `ledger-direct-magento2` 1.1.1 | 104 | smoke | lint, Magento2 CS, PHPUnit on 2.4.7/2.4.8 | no — no running shop in CI yet | PS-01…11; PW-04 proven |
+| `ledger-direct-woocommerce` 1.4.0 | with integration: 101 (WP test suite + WooCommerce) | | lint, WPCS, PHPStan, PHPUnit 8.2–8.4, Plugin Check | no — no running shop in CI yet | PS-01…11; PW-04 proven |
+| `ledger-direct-e2e` 0.1.0 | 16 (vitest) | — | typecheck, tests | drives the runs | — |
 
 "Proven" means ticked in a PR with order numbers and transaction hashes on the testnet.
 
@@ -74,6 +74,12 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 - **The Xaman scan (PW-04) is proven on all four platforms** (Shopware 1.4.0, Magento 1.1.0, PrestaShop
   0.5.0 and WooCommerce 1.3.0, XRP and RLUSD each): one `PaymentUri` in the core, every page scanned once.
   PW-01…PW-03 (browser wallets, network hint, phone layout) are proven on Shopware only.
+- **PS-04 runs within and across the asset class** since core 0.8.1 and harness PR #5, proven by the
+  harness on all four platforms on 2026-10-10; the nightly runs carry it (`--cases all`).
+- **A payment on a closed order is invisible until the account syncs again.** The background jobs sync
+  the accounts of *open* orders; a shop with no LedgerDirect order waiting shows a stray payment on a
+  cancelled order neither in its transaction table nor in the order panel (found with WooCommerce PS-11).
+  Follow-up in every plugin: sync the configured receiving account on each run as well.
 
 ## Where the evidence lives
 
