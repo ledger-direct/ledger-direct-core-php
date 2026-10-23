@@ -93,6 +93,22 @@ contract every repository implementation has to keep — extend it, implement `r
 the newest-first ordering, the per-network cursor and the random counter start are covered. It
 needs PHPUnit, which the core only suggests.
 
+## Security
+
+**PHP2Shell (CVE-2026-109618, CVE-2026-109619), October 2026: this library is not
+affected.** Both flaws are in the PHP interpreter's request handling, in the web
+SAPIs (PHP-FPM, mod_php, php-cgi, FrankenPHP, LiteSpeed), and trigger before any
+application or library code runs. Nothing in this package handles requests,
+uploads or sessions, and there is nothing to change here. What has to be
+updated is the PHP runtime an application built on it runs under: 8.2.35,
+8.3.36, 8.4.27 or 8.5.12 and later carry the fix. Until that is in place, the
+PHP project's mitigations (`session.upload_progress.enabled=0`, a low
+`post_max_size`, `memory_limit` set through `php_admin_value`) reduce the
+exposure but do not remove it.
+
+To report a security issue in this package itself, contact the maintainer
+privately rather than opening a public issue.
+
 ## Distribution
 
 At dev time this is a versioned Composer package. At release time it is bundled into each
