@@ -68,7 +68,8 @@ final class SettlementPolicy
     }
 
     /**
-     * Whether what arrived is a different asset than the one quoted: a token with the right name
+     * Whether what arrived is a different asset than the one quoted: the other asset class (a
+     * token on a native quote, or the native asset on a token quote), a token with the right name
      * from another issuer, or another token from the right issuer. The customer did pay and their
      * wallet reports success — it simply credits nothing towards this order.
      *
@@ -77,12 +78,20 @@ final class SettlementPolicy
      * definitions. Before this existed, two adapters compared issuer and currency themselves while
      * two others inferred it from `shortfall() === amountRequestedValue()`.
      *
-     * A native asset can never be the wrong asset: PaymentIntent accepts nothing but a float
-     * there, so there is no issuer or currency code to mismatch.
+     * A native amount on a native quote can never be the wrong asset: there is no issuer or
+     * currency code to mismatch. It can only be too small.
      */
     public function isWrongAsset(PaymentIntent $intent): bool
     {
-        if (!is_array($intent->amountRequested) || !is_array($intent->amountPaid)) {
+        if ($intent->amountPaid === null) {
+            return false;
+        }
+
+        if (is_array($intent->amountRequested) !== is_array($intent->amountPaid)) {
+            return true;
+        }
+
+        if (!is_array($intent->amountRequested)) {
             return false;
         }
 

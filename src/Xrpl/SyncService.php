@@ -126,7 +126,17 @@ final class SyncService
      */
     public function findTransactionFor(PaymentIntent $intent): ?XrplTransaction
     {
-        foreach ($this->deliveredCandidates($intent) as [$candidate]) {
+        foreach ($this->deliveredCandidates($intent) as [$candidate, $delivered]) {
+            // The old behaviour, kept here alone: the other asset class is noise to this method.
+            if (is_array($delivered) !== is_array($intent->amountRequested)) {
+                $this->logger->warning('LedgerDirect: payment in a different asset class on this tag skipped', [
+                    'hash' => $candidate->hash,
+                    'destination_tag' => $intent->destinationTag,
+                    'quoted_asset' => $intent->baseAsset,
+                ]);
+                continue;
+            }
+
             return $candidate;
         }
 
@@ -145,15 +155,18 @@ final class SyncService
      * outstanding" an instruction that can actually be followed.
      *
      * If nothing arrived in the quoted asset but something did in another
-     * one (same currency code from another issuer, or another token from
-     * the right issuer), the newest such transaction alone is the
+     * one (the other asset class — a token on a native quote or XRP on a
+     * token quote —, the same currency code from another issuer, or another
+     * token from the right issuer), the newest such transaction alone is the
      * fulfillment, so SettlementPolicy can declare it wrong-asset with the
      * delivered amount visible. As soon as one payment in the quoted asset
      * exists, only those count and the foreign ones are logged.
      *
-     * A class mismatch, a non-payment and an unreadable delivered amount
-     * are skipped and logged, never a reason to abort — unchanged from
-     * findTransactionFor().
+     * A non-payment and an unreadable delivered amount are skipped and
+     * logged, never a reason to abort — unchanged from findTransactionFor().
+     * The other asset class is *not* skipped here, unlike there: a customer
+     * who sent RLUSD for an XRP order has paid and must be told why nothing
+     * was credited.
      *
      * The intent records the newest contributing hash and ctid; the whole
      * list is on the Fulfillment and in the transaction table.
@@ -204,17 +217,16 @@ final class SyncService
     }
 
     /**
-     * Every transaction on the intent's tag that delivered something in the
-     * quoted asset *class*, newest first, paired with its decoded delivered
-     * amount. The skipping rules — unreadable amount, non-payment, other
-     * class — are shared by findTransactionFor() and findFulfillmentFor()
-     * and behave identically in both.
+     * Every transaction on the intent's tag that delivered something,
+     * newest first, paired with its decoded delivered amount — in either
+     * asset class. The skipping rules — unreadable amount, non-payment —
+     * are shared by findTransactionFor() and findFulfillmentFor(); only
+     * findTransactionFor() still drops the other asset class on its own.
      *
      * @return iterable<array{0: XrplTransaction, 1: float|array{currency: string, value: string, issuer: string}}>
      */
     private function deliveredCandidates(PaymentIntent $intent): iterable
     {
-        $quotedIssuedCurrency = is_array($intent->amountRequested);
 
         foreach ($this->findTransactions($intent->destinationAccount, $intent->destinationTag) as $candidate) {
             try {
@@ -245,32 +257,25 @@ final class SyncService
                 continue;
             }
 
-            if (is_array($delivered) !== $quotedIssuedCurrency) {
-                $this->logger->warning('LedgerDirect: payment in a different asset class on this tag skipped', [
-                    'hash' => $candidate->hash,
-                    'destination_tag' => $intent->destinationTag,
-                    'quoted_asset' => $intent->baseAsset,
-                ]);
-
-                continue;
-            }
-
             yield [$candidate, $delivered];
         }
     }
 
     /**
-     * Whether a delivered amount is in exactly the quoted asset. A native
-     * amount always is (there is no issuer to mismatch); an issued currency
-     * only with the quoted currency code and issuer — the same rule
-     * SettlementPolicy::isWrongAsset() states as a verdict, used here as a
-     * filter.
+     * Whether a delivered amount is in exactly the quoted asset: the same
+     * asset class first of all, then — for an issued currency — the quoted
+     * currency code and issuer. The same rule SettlementPolicy::isWrongAsset()
+     * states as a verdict, used here as a filter.
      *
      * @param float|array{currency: string, value: string, issuer: string} $delivered
      */
     private static function isQuotedAsset(PaymentIntent $intent, float|array $delivered): bool
     {
-        if (!is_array($intent->amountRequested) || !is_array($delivered)) {
+        if (is_array($intent->amountRequested) !== is_array($delivered)) {
+            return false;
+        }
+
+        if (!is_array($intent->amountRequested)) {
             return true;
         }
 

@@ -200,6 +200,31 @@ final class PaymentIntentTest extends TestCase
         self::assertNotSame($quote, $fulfilled);
     }
 
+    /**
+     * The fulfillment records what arrived, in whichever asset class: the page has to name a
+     * token sent for an XRP order. It only has to be a well-formed amount.
+     */
+    public function testAFulfillmentMayBeInTheOtherAssetClassButMustBeWellFormed(): void
+    {
+        $xrp = PaymentIntent::quote(
+            type: 'xrp-payment', chain: 'XRPL', network: 'testnet', baseAsset: 'XRP', quoteCurrency: 'EUR',
+            pairing: 'XRP/EUR', exchangeRate: 1.25, amountRequested: 0.80674, destinationAccount: 'rMerchant', destinationTag: 1,
+        );
+        $token = ['currency' => '524C555344000000000000000000000000000000', 'value' => '0.80', 'issuer' => 'rIssuer'];
+
+        self::assertSame($token, $xrp->withFulfillment('H', $token)->amountPaid);
+
+        $rlusd = PaymentIntent::quote(
+            type: 'rlusd-payment', chain: 'XRPL', network: 'testnet', baseAsset: 'RLUSD', quoteCurrency: 'USD',
+            pairing: 'RLUSD/USD', exchangeRate: 1.0, amountRequested: $token, destinationAccount: 'rMerchant', destinationTag: 1,
+        );
+        self::assertSame(0.8, $rlusd->withFulfillment('H', 0.8)->amountPaid);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage("amount_paid is missing 'issuer'.");
+        $xrp->withFulfillment('H', ['currency' => '5553444300000000000000000000000000000000', 'value' => '1']);
+    }
+
     public function testWithFulfillmentWorksWithoutCtidForNonXrplChains(): void
     {
         $quote = PaymentIntent::quote(
