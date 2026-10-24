@@ -7,6 +7,7 @@ namespace Hardcastle\LedgerDirect\Core\Xrpl;
 use Brick\Math\BigDecimal;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface;
+use Hardcastle\LedgerDirect\Core\Sync\LedgerSyncInterface;
 use Psr\Log\LoggerInterface;
 use Throwable;
 use UnexpectedValueException;
@@ -17,7 +18,7 @@ use UnexpectedValueException;
  * destination account/tag (the "Sync + Dedup + Match" service CLAUDE.md
  * names).
  */
-final class SyncService
+final class SyncService implements LedgerSyncInterface
 {
     private const MAX_PAGES = 1000;
 
@@ -34,6 +35,11 @@ final class SyncService
      * the same safety-guard shape used elsewhere in the core for an
      * otherwise-open-ended loop against external/injected dependencies).
      */
+    public function sync(string $account, string $network): void
+    {
+        $this->syncTransactions($account, $network);
+    }
+
     public function syncTransactions(string $address, string $network): void
     {
         $lastSyncedLedgerIndex = $this->transactionRepository->getLastSyncedLedgerIndex($address, $network);

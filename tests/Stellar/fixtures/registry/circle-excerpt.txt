@@ -1,0 +1,8 @@
+# Source: Circle developer documentation, fetched 2026-09-30 with curl (public pages).
+# https://developers.circle.com/stablecoins/usdc-contract-addresses
+# https://developers.circle.com/stablecoins/eurc-contract-addresses
+# Lines are the "Stellar" / "Stellar Testnet" rows of the contract-address tables, verbatim.
+USDC mainnet USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+USDC testnet USDC-GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+EURC mainnet EURC-GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2
+EURC testnet EURC-GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO

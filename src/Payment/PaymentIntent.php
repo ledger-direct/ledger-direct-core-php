@@ -31,6 +31,7 @@ final readonly class PaymentIntent
      */
     private const NATIVE_ASSET_BY_CHAIN = [
         'XRPL' => 'XRP',
+        'STELLAR' => 'XLM',
     ];
 
     private const REQUIRED_FIELDS = [

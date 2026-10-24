@@ -1,0 +1,106 @@
+{
+  "_links": {
+    "self": {
+      "href": "https://horizon.stellar.org/accounts/GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2"
+    },
+    "transactions": {
+      "href": "https://horizon.stellar.org/accounts/GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2/transactions{?cursor,limit,order}",
+      "templated": true
+    },
+    "operations": {
+      "href": "https://horizon.stellar.org/accounts/GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2/operations{?cursor,limit,order}",
+      "templated": true
+    },
+    "payments": {
+      "href": "https://horizon.stellar.org/accounts/GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2/payments{?cursor,limit,order}",
+      "templated": true
+    },
+    "effects": {
+      "href": "https://horizon.stellar.org/accounts/GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2/effects{?cursor,limit,order}",
+      "templated": true
+    },
+    "offers": {
+      "href": "https://horizon.stellar.org/accounts/GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2/offers{?cursor,limit,order}",
+      "templated": true
+    },
+    "trades": {
+      "href": "https://horizon.stellar.org/accounts/GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2/trades{?cursor,limit,order}",
+      "templated": true
+    },
+    "data": {
+      "href": "https://horizon.stellar.org/accounts/GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2/data/{key}",
+      "templated": true
+    }
+  },
+  "id": "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2",
+  "account_id": "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2",
+  "sequence": "205703318293446666",
+  "sequence_ledger": 62313362,
+  "sequence_time": "1777311208",
+  "subentry_count": 6,
+  "home_domain": "circle.com",
+  "last_modified_ledger": 64674257,
+  "last_modified_time": "2026-09-29T04:44:26Z",
+  "thresholds": {
+    "low_threshold": 2,
+    "med_threshold": 2,
+    "high_threshold": 2
+  },
+  "flags": {
+    "auth_required": false,
+    "auth_revocable": true,
+    "auth_immutable": false,
+    "auth_clawback_enabled": false
+  },
+  "balances": [
+    {
+      "balance": "365837047.3134340",
+      "limit": "922337203685.4775807",
+      "buying_liabilities": "921971366638.1641467",
+      "selling_liabilities": "0.0000000",
+      "last_modified_ledger": 64701387,
+      "is_authorized": true,
+      "is_authorized_to_maintain_liabilities": true,
+      "asset_type": "credit_alphanum12",
+      "asset_code": "EURCAllow",
+      "asset_issuer": "GDTZLTO7FFA6575TBETH6UH6UTZNS2UJE6FHS2V5LUEJNXQGX4FZJT2I"
+    },
+    {
+      "balance": "87.9188687",
+      "buying_liabilities": "0.0000000",
+      "selling_liabilities": "0.0000000",
+      "asset_type": "native"
+    }
+  ],
+  "signers": [
+    {
+      "weight": 1,
+      "key": "GAAJM2L6ERI3W3V3AICROSXNMBSZ3QMC4WG7ONE5HATYRYXF3KMI4E7A",
+      "type": "ed25519_public_key"
+    },
+    {
+      "weight": 1,
+      "key": "GBO7BGBUE2SHSDVY3MS7GWNDCJ75J2EIS2P6TAVVHZDTYYNAJSYCFW5H",
+      "type": "ed25519_public_key"
+    },
+    {
+      "weight": 1,
+      "key": "GC3LJ74JSWCH4QRJEV6AWQPVBTO7TSSKUPEMH3EIXDYFWHGQQPS4RS7O",
+      "type": "ed25519_public_key"
+    },
+    {
+      "weight": 1,
+      "key": "GCFP5OXXBEMUMZJFHA7KXKNYI6UKNWMKCPOLQQILCVLRR76MQCJU7MSV",
+      "type": "ed25519_public_key"
+    },
+    {
+      "weight": 0,
+      "key": "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2",
+      "type": "ed25519_public_key"
+    }
+  ],
+  "data": {},
+  "num_sponsoring": 0,
+  "num_sponsored": 0,
+  "paging_token": "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2"
+}
