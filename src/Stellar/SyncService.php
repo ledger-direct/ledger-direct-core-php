@@ -105,36 +105,25 @@ final class SyncService implements LedgerSyncInterface
      * delivered in total — the Stellar reading of the settlement rule:
      * every payment in the quoted asset (XLM for a native quote; the quoted
      * code *and* issuer for an issued one) adds up. If nothing arrived in
-     * the quoted asset but something did in another issued asset, the
-     * newest such payment alone is the fulfillment, so the platform can
-     * show wrong_asset. A class mismatch (an issued payment on an XLM
-     * quote, or XLM on an issued quote) is skipped and logged.
+     * the quoted asset but something did in another asset — the other
+     * class (an issued payment on an XLM quote, or XLM on an issued quote),
+     * another code, or another issuer — the newest such payment alone is
+     * the fulfillment, so the platform can show wrong_asset with the
+     * delivered amount. As soon as one payment in the quoted asset exists,
+     * only those count and the foreign ones are logged.
+     *
+     * The other class is *not* skipped, as it was before the merge of
+     * 0.8.1: a customer who sent XLM for a USDC order has paid and must be
+     * told why nothing was credited, instead of seeing "waiting" until the
+     * quote expires. Same rule as Xrpl\SyncService::findFulfillmentFor().
      */
     public function findFulfillmentFor(PaymentIntent $intent): ?Fulfillment
     {
-        $quotedIssued = is_array($intent->amountRequested);
         $quoted = [];
         $foreign = [];
 
         foreach ($this->findPayments($intent->destinationAccount, (string) $intent->destinationTag) as $payment) {
-            $issued = $payment->assetIssuer !== null;
-
-            if ($issued !== $quotedIssued) {
-                $this->logger->warning('LedgerDirect: Stellar payment in a different asset class on this memo skipped', [
-                    'hash' => $payment->hash,
-                    'op_index' => $payment->opIndex,
-                    'memo_id' => $payment->memoId,
-                    'quoted_asset' => $intent->baseAsset,
-                ]);
-
-                continue;
-            }
-
-            $isQuoted = !$issued
-                || ($payment->assetCode === $intent->amountRequested['currency']
-                    && $payment->assetIssuer === $intent->amountRequested['issuer']);
-
-            if ($isQuoted) {
+            if (self::isQuotedAsset($intent, $payment)) {
                 $quoted[] = $payment;
             } else {
                 $foreign[] = $payment;
@@ -185,6 +174,27 @@ final class SyncService implements LedgerSyncInterface
         if ($new !== []) {
             $this->paymentRepository->savePayments($new);
         }
+    }
+
+    /**
+     * The quoted asset, as a filter: XLM (no issuer) for a native quote;
+     * the quoted code *and* issuer for an issued one. The same test
+     * SettlementPolicy::isWrongAsset() states as a verdict.
+     */
+    private static function isQuotedAsset(PaymentIntent $intent, StellarPayment $payment): bool
+    {
+        $issued = $payment->assetIssuer !== null;
+
+        if ($issued !== is_array($intent->amountRequested)) {
+            return false;
+        }
+
+        if (!$issued) {
+            return true;
+        }
+
+        return $payment->assetCode === $intent->amountRequested['currency']
+            && $payment->assetIssuer === $intent->amountRequested['issuer'];
     }
 
     /**

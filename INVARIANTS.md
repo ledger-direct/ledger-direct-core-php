@@ -239,6 +239,14 @@ Horizon's operation cursor would serve neither. What is shared is what was alrea
 `PaymentIntent`, `SettlementPolicy`, `PaymentStatus`, `ConfigProviderInterface` (with `$chain`),
 `SyncThrottle`, the oracle mechanics and the identifier permutation.
 
+The settlement rule above applies unchanged, read for Stellar by
+`Stellar\SyncService::findFulfillmentFor()`: every payment in the quoted asset on the memo id adds
+up — XLM for a native quote, the quoted code **and** issuer for an issued one. A payment in another
+asset, the other class included (XLM on a USDC quote, an issued asset on an XLM quote), is a foreign
+candidate like on XRPL: alone it is the fulfillment so the platform shows `wrong_asset` with the
+delivered amount; next to a payment in the quoted asset it is put aside and logged. It is never
+skipped — the 0.8.1 rule holds on both chains, which is what lets `PaymentStatus` treat them alike.
+
 ### Names in the record
 
 - `chain` is **`STELLAR`**, `network` is `mainnet` | `testnet` as on XRPL.
@@ -377,14 +385,14 @@ EURC  testnet  GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO
 
 Observed on the same day: Circle's USDC issuers (both networks) and the EURC mainnet issuer are
 `auth_revocable` — the issuer can freeze a trust line; none has `auth_clawback_enabled`. That is
-what the adapter's issuer-flags one-liner shows. USDT0 is not in 0.8.0: it has no documented
+what the adapter's issuer-flags one-liner shows. USDT0 is not in the registry: it has no documented
 testnet issuer, so it could not pass the case catalogue.
 
 ### Known gaps
 
 - **Soroban transfers.** USDC can arrive through the Stellar Asset Contract as an
   `invoke_host_function` operation; Horizon reports it under `asset_balance_changes`. Not matched
-  in 0.8.0. CAP-67 events over RPC cover it, which is the main reason RPC follows as a source.
+  yet. CAP-67 events over RPC cover it, which is the main reason RPC follows as a source.
 - **Claimable balances** are not payments to the account and carry no memo; not matched.
 - **Testnet-only assets** for the case catalogue are self-issued (`TESTUSD` in the fixtures); the
   registry never contains them.
