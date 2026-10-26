@@ -8,9 +8,10 @@ use GuzzleHttp\Psr7\Response;
 use RuntimeException;
 
 /**
- * The real Horizon and RPC answers recorded by the M0 spike on
- * 2026-09-23 (see the handover, section 12), served back through the
- * FakeHttpClient.
+ * Real Horizon answers recorded by the M0 spike on 2026-09-23 (see the
+ * handover, section 12), served back through the FakeHttpClient. Only
+ * files a test reads are kept; the spike's RPC answers and the rest of
+ * its evidence were dropped before the review (handover, 18.1).
  */
 final class StellarFixtures
 {
