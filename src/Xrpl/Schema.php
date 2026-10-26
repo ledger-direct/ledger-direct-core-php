@@ -12,9 +12,14 @@ namespace Hardcastle\LedgerDirect\Core\Xrpl;
  *
  * tables() is the neutral description a Laravel migration or a Doctrine
  * Table can be built from without a type translation table. mysql() is
- * the ready-made DDL for the MySQL-based platforms, and it reproduces the
+ * the ready-made DDL for the MySQL-based platforms. It started as the
  * PrestaShop adapter's schema — the one adapter whose DDL carried every
- * 0.4 requirement — apart from prefix and engine.
+ * 0.4 requirement — and has since renamed `ctid` to `tx_ctid`, which the
+ * adapters follow.
+ *
+ * Column names must work on every database a platform may run on. In
+ * particular none may be one of PostgreSQL's system column names
+ * (POSTGRES_SYSTEM_COLUMNS), which no user column can take, quoted or not.
  *
  * Column types: 'int' and 'bigint' (unsigned where flagged), 'string' with
  * a length, 'text' for the JSON blobs. Nothing else is needed.
@@ -23,6 +28,13 @@ final class Schema
 {
     public const TABLE_TX = 'ledger_direct_xrpl_tx';
     public const TABLE_DESTINATION_TAG = 'ledger_direct_xrpl_destination_tag';
+
+    /**
+     * Names PostgreSQL gives every table implicitly; a user column cannot
+     * have them. Kept here so the rule is checked, not remembered — every
+     * chain's schema is tested against it.
+     */
+    public const POSTGRES_SYSTEM_COLUMNS = ['tableoid', 'xmin', 'cmin', 'xmax', 'cmax', 'ctid'];
 
     /**
      * @return array<string, array{
@@ -44,7 +56,9 @@ final class Schema
                     // BIGINT, not VARCHAR: the cursor is a MAX() and "9" sorts above "10".
                     ['name' => 'ledger_index', 'type' => 'bigint', 'unsigned' => true, 'nullable' => false],
                     ['name' => 'hash', 'type' => 'string', 'length' => 64, 'nullable' => false],
-                    ['name' => 'ctid', 'type' => 'string', 'length' => 16, 'nullable' => false],
+                    // The CTID. Not called `ctid`: PostgreSQL reserves that name for a
+                    // system column in every table, quoted or not.
+                    ['name' => 'tx_ctid', 'type' => 'string', 'length' => 16, 'nullable' => false],
                     ['name' => 'account', 'type' => 'string', 'length' => 64, 'nullable' => false],
                     ['name' => 'destination', 'type' => 'string', 'length' => 64, 'nullable' => false],
                     // Unsigned: XRPL's DestinationTag is 0..4294967295 and the tag

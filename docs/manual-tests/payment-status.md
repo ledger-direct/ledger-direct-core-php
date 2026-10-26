@@ -79,8 +79,11 @@ state after step 2.
 *Contract: state `wrong_asset`, `amount_paid` is the **delivered** asset, `shortfall` the whole
 request; SettlementPolicy "Issued currency exact".*
 
+Run it twice: once within the asset class and once across it.
+
 1. Place an order quoted in one stablecoin (USDC). Pay the full amount in the other (RLUSD),
-   same account and tag.
+   same account and tag. Then, on a new order quoted in the native asset (XRP), pay with a
+   stablecoin instead — or the reverse, a token order paid with XRP.
 2. Wait for the page to notice.
 3. Send the quoted asset in full.
 
@@ -90,7 +93,11 @@ amount; `state: wrong_asset`, `amount_paid` carries the delivered currency and i
 transaction moves to the platform's partially paid state (money is there, nothing counts). After
 step 3: `redirect`, paid, and the intent's hash is the quoted-asset transaction, not the stray.
 
-Evidence: order number; both hashes; the `wrong_asset` payload verbatim.
+Across the class the shapes differ: `amount_paid` is the delivered asset (an `IssuedCurrencyAmount`
+for a token sent to an XRP order, a float for XRP sent to a token order), `shortfall` keeps the
+requested shape. Before core 0.8.1 the cross-class payment was never noticed at all.
+
+Evidence: order numbers; all hashes; both `wrong_asset` payloads verbatim.
 
 ## PS-05 — Settled
 
