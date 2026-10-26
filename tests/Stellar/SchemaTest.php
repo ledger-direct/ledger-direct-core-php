@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hardcastle\LedgerDirect\Core\Tests\Stellar;
 
 use Hardcastle\LedgerDirect\Core\Stellar\Schema;
+use Hardcastle\LedgerDirect\Core\Xrpl\Schema as XrplSchema;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -41,6 +42,25 @@ final class SchemaTest extends TestCase
         // Amounts are decimal strings, never floats.
         self::assertSame('string', $columns['amount']['type']);
         self::assertTrue($columns['asset_issuer']['nullable'], 'native has no issuer');
+    }
+
+    /**
+     * The rule 0.9.0 added for every table the core describes: PostgreSQL
+     * reserves `ctid`, `xmin`, `xmax`, `cmin`, `cmax` and `tableoid` on
+     * every table, quoted or not. The XRPL transaction table learnt it the
+     * hard way; the Stellar tables must stay clear of it from the start.
+     */
+    public function testNoColumnIsAPostgresSystemColumn(): void
+    {
+        foreach (Schema::tables() as $table => $definition) {
+            foreach ($definition['columns'] as $column) {
+                self::assertNotContains(
+                    strtolower($column['name']),
+                    XrplSchema::POSTGRES_SYSTEM_COLUMNS,
+                    "{$table}.{$column['name']} is a PostgreSQL system column name",
+                );
+            }
+        }
     }
 
     public function testTheMemoCounterTableMirrorsTheXrplCounter(): void
