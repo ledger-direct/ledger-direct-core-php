@@ -83,7 +83,7 @@ final class ChainCatalog
             networks: ['mainnet', 'testnet'],
             identifierLabel: 'Destination tag',
             // Ripple's base58 alphabet omits 0, O, I and l.
-            accountPattern: '/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/',
+            accountPattern: '/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/D',
             assets: [
                 new AssetDescriptor('XRP', 'XRP', native: true, displayDecimals: 5, type: 'xrp-payment', pegCurrency: null, issuers: []),
                 new AssetDescriptor('RLUSD', 'RLUSD (Ripple USD)', native: false, displayDecimals: 2, type: 'rlusd-payment', pegCurrency: 'USD', issuers: [
@@ -109,7 +109,7 @@ final class ChainCatalog
             networks: ['mainnet', 'testnet'],
             identifierLabel: 'Memo ID',
             // Stellar public keys are StrKey: G plus 55 base32 characters.
-            accountPattern: '/^G[A-Z2-7]{55}$/',
+            accountPattern: '/^G[A-Z2-7]{55}$/D',
             assets: [
                 new AssetDescriptor('XLM', 'XLM', native: true, displayDecimals: 5, type: 'stellar-xlm-payment', pegCurrency: null, issuers: []),
                 new AssetDescriptor('USDC', 'USDC (Circle)', native: false, displayDecimals: 2, type: 'stellar-usdc-payment', pegCurrency: 'USD', issuers: [

@@ -13,7 +13,10 @@ use Hardcastle\LedgerDirect\Core\Payment\PaymentUri as XrplPaymentUri;
  * page only renders it, the amount as the page shows it.
  *
  * `web+stellar:pay?destination=<G…>&amount=<amount>&memo=<id>&memo_type=MEMO_ID`,
- * plus `asset_code` and `asset_issuer` for an issued asset. The memo is
+ * plus `asset_code` and `asset_issuer` for an issued asset, plus
+ * `network_passphrase` on testnet — SEP-0007 assumes the public network
+ * when it is absent, so a testnet request without it would ask the wallet
+ * to pay on mainnet. The memo is
  * always in the request: a payment without it cannot be matched to the
  * order, and typing it was the biggest source of lost payments on XRPL.
  * The destination is the plain G-address with a MEMO_ID rather than a
@@ -25,6 +28,14 @@ use Hardcastle\LedgerDirect\Core\Payment\PaymentUri as XrplPaymentUri;
 final class PaymentUri
 {
     public const SCHEME = 'web+stellar:pay';
+
+    /**
+     * The testnet's network passphrase as Horizon reports it in its root
+     * document (`network_passphrase`; pinned against the recorded one in
+     * tests). SEP-0007 wants it verbatim, spaces included. Mainnet needs
+     * none: it is the default.
+     */
+    public const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 
     /**
      * @param string $amountDue the amount to send, as the page shows it
@@ -47,6 +58,10 @@ final class PaymentUri
 
         $parameters['memo'] = (string) $intent->destinationTag;
         $parameters['memo_type'] = 'MEMO_ID';
+
+        if ($intent->network === 'testnet') {
+            $parameters['network_passphrase'] = self::TESTNET_PASSPHRASE;
+        }
 
         return self::SCHEME . '?' . http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
     }

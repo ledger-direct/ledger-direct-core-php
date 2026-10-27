@@ -120,7 +120,7 @@ final readonly class StellarPayment
      */
     public static function isCanonicalIdentifier(string $value): bool
     {
-        if (preg_match('/^(0|[1-9][0-9]*)$/', $value) !== 1 || strlen($value) > 20) {
+        if (preg_match('/^(0|[1-9][0-9]*)$/D', $value) !== 1 || strlen($value) > 20) {
             return false;
         }
 

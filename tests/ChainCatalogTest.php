@@ -45,7 +45,7 @@ final class ChainCatalogTest extends TestCase
     public function testTypesAgreeWithTheIntentServices(): void
     {
         $client = new FakeHttpClient();
-        $this->queueNativePrice($client, 'ripple', 'XRPUSDT', 'XXRPZUSD');
+        $this->queueNativePrice($client, 'ripple', 'XXRPZUSD');
         $xrpl = new XrplIntentService(
             new PriceService($client, new HttpFactory(), new RecordingLogger()),
             new DestinationTagService(new InMemoryXrplTransactionRepository()),
@@ -56,7 +56,7 @@ final class ChainCatalogTest extends TestCase
         }
 
         $client = new FakeHttpClient();
-        $this->queueNativePrice($client, 'stellar', 'XLMUSDT', 'XXLMZUSD');
+        $this->queueNativePrice($client, 'stellar', 'XXLMZUSD');
         $stellar = new StellarIntentService(
             new PriceService($client, new HttpFactory(), new RecordingLogger()),
             new MemoIdService(new InMemoryStellarPaymentRepository()),
@@ -103,6 +103,8 @@ final class ChainCatalogTest extends TestCase
         self::assertTrue($stellar->isValidAccount('GCGEFYLIJXTISHBB3LENEJNGDBU7XHEI4F2PTLY4OSZ5Q5YF7ZWVNQIA'));
         self::assertFalse($stellar->isValidAccount('rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'));
         self::assertFalse($stellar->isValidAccount('MCGEFYLIJXTISHBB3LENEJNGDBU7XHEI4F2PTLY4OSZ5Q5YF7ZWVMAAAAAAAACP36ET2E'), 'a muxed address is not a receiving account');
+        self::assertFalse($xrpl->isValidAccount("rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh\n"), 'a trailing newline from a form field is not part of the account');
+        self::assertFalse($stellar->isValidAccount("GCGEFYLIJXTISHBB3LENEJNGDBU7XHEI4F2PTLY4OSZ5Q5YF7ZWVNQIA\n"));
     }
 
     public function testForTypeFindsChainAndAsset(): void
@@ -120,7 +122,7 @@ final class ChainCatalogTest extends TestCase
         ChainCatalog::chain('XRPL')->asset('XAH');
     }
 
-    private function queueNativePrice(FakeHttpClient $client, string $coingeckoId, string $binance, string $kraken): void
+    private function queueNativePrice(FakeHttpClient $client, string $coingeckoId, string $kraken): void
     {
         $client->queueResponse('api.binance.com', new Response(200, [], '{"price":"0.5"}'));
         $client->queueResponse('api.coingecko.com', new Response(200, [], '{"' . $coingeckoId . '":{"usd":0.5}}'));

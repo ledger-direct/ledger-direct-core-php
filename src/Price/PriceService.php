@@ -94,6 +94,14 @@ final class PriceService
         string $baseAsset,
         string $network,
     ): PriceQuote {
+        if (!in_array($baseAsset, [XrpPriceProvider::CRYPTO_CODE, RlusdPriceProvider::CRYPTO_CODE, UsdcPriceProvider::CRYPTO_CODE], true)) {
+            // Before any oracle work: an XLM or EURC caller must learn it is on the
+            // wrong method, not that an oracle happened to have no rate.
+            throw new InvalidArgumentException(
+                "'{$baseAsset}' is not an XRPL asset; use quoteAmount() and the chain's own envelope."
+            );
+        }
+
         $quote = $this->quoteAmount($total, $quoteCurrency, $baseAsset, $network);
 
         $amountRequested = match ($baseAsset) {

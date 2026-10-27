@@ -35,7 +35,7 @@ final class StellarPaymentTest extends TestCase
             self::assertTrue(StellarPayment::isCanonicalIdentifier($ok), $ok);
         }
 
-        foreach (['', ' 123456', '123456 ', '0123', '+1', '-1', '1.0', '1e3', '18446744073709551616', 'abc'] as $bad) {
+        foreach (['', ' 123456', '123456 ', "123456\n", '0123', '+1', '-1', '1.0', '1e3', '18446744073709551616', 'abc'] as $bad) {
             self::assertFalse(StellarPayment::isCanonicalIdentifier($bad), var_export($bad, true));
         }
     }
