@@ -246,6 +246,28 @@ final class SyncServiceTest extends TestCase
         self::assertSame(PaymentStatus::SETTLED, PaymentStatus::fromIntent($fulfilled, new SettlementPolicy())->state());
     }
 
+    /**
+     * The G-address is an account on both networks and the memo counter is
+     * per account: a testnet XLM payment on a refreshed mainnet quote must
+     * neither settle it nor show as wrong_asset. Same rule as on XRPL.
+     */
+    public function testAPaymentFromAnotherNetworkNeverSettlesOrCountsAtAll(): void
+    {
+        [, $repository, $service, $logger] = $this->makeService();
+        $repository->savePayments([
+            $this->storedPayment('HASH_TESTNET_XLM', ledger: 4900, memoId: 31337, assetCode: 'XLM', assetIssuer: null, amount: '20.0000000'),
+        ]);
+
+        $mainnetIntent = PaymentIntent::fromArray(array_replace($this->xlmIntent(20.0, memoId: 31337)->toArray(), ['network' => 'mainnet']));
+
+        self::assertNull($service->findFulfillmentFor($mainnetIntent));
+        self::assertSame(PaymentStatus::WAITING, PaymentStatus::fromIntent($mainnetIntent, new SettlementPolicy())->state());
+        self::assertCount(1, array_filter($logger->records(), static fn (array $r): bool => str_contains($r['message'], 'another network')));
+
+        $fulfilled = $service->findFulfillmentFor($this->xlmIntent(20.0, memoId: 31337))?->applyTo($this->xlmIntent(20.0, memoId: 31337));
+        self::assertSame(PaymentStatus::SETTLED, PaymentStatus::fromIntent($fulfilled, new SettlementPolicy())->state(), 'on its own network the same payment settles');
+    }
+
     public function testNoPaymentOnTheMemoMeansNoFulfillment(): void
     {
         [, , $service] = $this->syncedService();

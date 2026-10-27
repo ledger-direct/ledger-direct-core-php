@@ -233,8 +233,25 @@ final class SyncService implements LedgerSyncInterface
      */
     private function deliveredCandidates(PaymentIntent $intent): iterable
     {
-
         foreach ($this->findTransactions($intent->destinationAccount, $intent->destinationTag) as $candidate) {
+            if ($candidate->network !== $intent->network) {
+                /*
+                 * The same key pair is a valid account on testnet and mainnet,
+                 * and the tag counter is per account, not per network. A
+                 * merchant who switches the network keeps account and tag on
+                 * a refreshed quote, so a testnet payment would otherwise
+                 * settle a mainnet order. Test money never pays a real one.
+                 */
+                $this->logger->warning('LedgerDirect: skipping a transaction from another network on this tag', [
+                    'hash' => $candidate->hash,
+                    'destination_tag' => $intent->destinationTag,
+                    'transaction_network' => $candidate->network,
+                    'intent_network' => $intent->network,
+                ]);
+
+                continue;
+            }
+
             try {
                 $delivered = $candidate->getDeliveredAmount();
             } catch (UnexpectedValueException $exception) {

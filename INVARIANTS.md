@@ -82,6 +82,13 @@ the intent:
   the sum. It becomes the fulfillment — alone, newest first — only when **nothing** in the quoted
   asset has arrived, so the platform can show `wrong_asset` with the delivered amount. As soon as
   one payment in the quoted asset exists, only those count and the foreign ones are logged.
+- **A candidate from another network never counts** — not towards the sum, not as a wrong-asset
+  fulfillment, not in the deprecated single-candidate lookup. The same key pair is an account on
+  testnet and mainnet, the tag and memo counters are per account, and a refreshed quote keeps account
+  and identifier (`PaymentIntentService::resolveDestination()`), so a merchant who switches the
+  network would otherwise see a testnet payment settle a mainnet order. Both syncs compare the
+  record's `network` with the intent's before anything else and skip with a warning. Test money
+  never pays a real order; the rule holds on every chain.
 - `hash` and `ctid` on the intent name the **newest contributing** transaction; schema v1 carries
   no list. The full list is on the `Fulfillment` and always recoverable via `findTransactions()`.
 - No time filter: the intent has no creation timestamp, and the tag's uniqueness (random counter
@@ -246,6 +253,7 @@ asset, the other class included (XLM on a USDC quote, an issued asset on an XLM 
 candidate like on XRPL: alone it is the fulfillment so the platform shows `wrong_asset` with the
 delivered amount; next to a payment in the quoted asset it is put aside and logged. It is never
 skipped — the 0.8.1 rule holds on both chains, which is what lets `PaymentStatus` treat them alike.
+A payment from another network is skipped before any of this, as on XRPL.
 
 ### Names in the record
 

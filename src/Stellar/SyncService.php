@@ -116,6 +116,9 @@ final class SyncService implements LedgerSyncInterface
      * 0.8.1: a customer who sent XLM for a USDC order has paid and must be
      * told why nothing was credited, instead of seeing "waiting" until the
      * quote expires. Same rule as Xrpl\SyncService::findFulfillmentFor().
+     *
+     * A payment from another network *is* skipped, before anything else:
+     * test money never pays a real order (INVARIANTS.md, "Settlement").
      */
     public function findFulfillmentFor(PaymentIntent $intent): ?Fulfillment
     {
@@ -123,6 +126,21 @@ final class SyncService implements LedgerSyncInterface
         $foreign = [];
 
         foreach ($this->findPayments($intent->destinationAccount, (string) $intent->destinationTag) as $payment) {
+            if ($payment->network !== $intent->network) {
+                // Same rule as on XRPL: the G-address is valid on both networks and
+                // the memo counter is per account, so a testnet payment on a
+                // refreshed mainnet quote must never count — not even as wrong_asset.
+                $this->logger->warning('LedgerDirect: skipping a Stellar payment from another network on this memo', [
+                    'hash' => $payment->hash,
+                    'op_index' => $payment->opIndex,
+                    'memo_id' => $intent->destinationTag,
+                    'payment_network' => $payment->network,
+                    'intent_network' => $intent->network,
+                ]);
+
+                continue;
+            }
+
             if (self::isQuotedAsset($intent, $payment)) {
                 $quoted[] = $payment;
             } else {
