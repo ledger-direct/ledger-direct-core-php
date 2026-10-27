@@ -40,7 +40,7 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 
 | Repository | Unit | Integration | CI gate | Nightly E2E | Manual cases |
 |---|---|---|---|---|---|
-| `ledger-direct-core-php` 0.10.0 | 292 (54 of them Stellar) | opt-in (oracles, Horizon testnet) | PHP 8.2–8.4, lowest deps | — | — |
+| `ledger-direct-core-php` 0.10.0 | 292 (56 of them Stellar) | opt-in (oracles, Horizon testnet) | PHP 8.2–8.4, lowest deps | — | — |
 | `ledger-direct-payment-ui` 0.1.1 | 7 (Node) | fixture page | tests, build, `dist` committed | — | fixture in a browser |
 | `ledger-direct-shopware6` 1.4.4 | 112 | 10 (dockware 6.7) | shopware-cli validate, PHPUnit | **yes** (`e2e.yml`, dockware) | PS-01…11, PW-01…04 proven on 1.4.0 |
 | `ledger-direct-prestashop` 0.5.1 | 47 | 52 (Flashlight 9.0) | syntax 8.2–8.4, CS, PHPStan 9.0/9.1, PHPUnit, release zip | **yes** (`e2e.yml`, Flashlight) | PS-01…11; PW-04 proven |
@@ -50,7 +50,7 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 
 "Proven" means ticked in a PR with order numbers and transaction hashes on the testnet.
 
-**Stellar** (core 0.10.0): 54 unit tests under `tests/Stellar/` run in the
+**Stellar** (core 0.10.0): 56 unit tests under `tests/Stellar/` run in the
 same suite — recorded Horizon answers under `tests/Stellar/fixtures/` stand in for the network, the
 registry test compares the issuer constants with the checked-in Circle excerpt *and* Horizon's answers,
 `SchemaTest` holds the PostgreSQL system-column rule for the Stellar tables too — plus the opt-in
