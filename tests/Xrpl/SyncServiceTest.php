@@ -662,6 +662,34 @@ final class SyncServiceTest extends TestCase
         self::assertTrue((new SettlementPolicy())->isSettled($fulfilled));
     }
 
+    /**
+     * The same key pair is an account on both networks and the tag counter
+     * is per account. A merchant who moves from testnet to mainnet keeps
+     * account and tag on a refreshed quote, so without this rule the test
+     * payment would settle the real order — or, in another asset, show as
+     * wrong_asset. It is neither: it does not exist on this network.
+     */
+    public function testAPaymentFromAnotherNetworkNeverSettlesOrCountsAtAll(): void
+    {
+        [, $repository, $service, $logger] = $this->makeService();
+
+        $repository->saveTransactions([
+            $this->hydrated(hash: 'HASH_TESTNET_XRP', ledgerIndex: '900', destination: 'rDest', destinationTag: 114729, meta: ['delivered_amount' => '827440'], network: 'testnet'),
+            $this->hydrated(hash: 'HASH_TESTNET_RLUSD', ledgerIndex: '901', destination: 'rDest', destinationTag: 114729, meta: ['delivered_amount' => ['currency' => self::RLUSD_CURRENCY, 'value' => '0.80', 'issuer' => self::RLUSD_ISSUER]], network: 'testnet'),
+        ]);
+
+        $mainnetIntent = PaymentIntent::fromArray(array_replace($this->xrpIntent()->toArray(), ['network' => 'mainnet']));
+
+        self::assertNull($service->findFulfillmentFor($mainnetIntent));
+        self::assertNull($service->findTransactionFor($mainnetIntent));
+        self::assertSame(PaymentStatus::WAITING, PaymentStatus::fromIntent($mainnetIntent, new SettlementPolicy())->state());
+
+        $skipped = array_filter($logger->records(), static fn (array $r): bool => str_contains($r['message'], 'another network'));
+        self::assertCount(4, $skipped, 'both transactions, in both lookups');
+
+        self::assertNotNull($service->findFulfillmentFor($this->xrpIntent()), 'on its own network the same payment settles');
+    }
+
     public function testFindFulfillmentForReturnsNullWithoutCandidates(): void
     {
         [, , $service] = $this->makeService();

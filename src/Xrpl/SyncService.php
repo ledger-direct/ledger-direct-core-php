@@ -7,6 +7,7 @@ namespace Hardcastle\LedgerDirect\Core\Xrpl;
 use Brick\Math\BigDecimal;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface;
+use Hardcastle\LedgerDirect\Core\Sync\LedgerSyncInterface;
 use Psr\Log\LoggerInterface;
 use Throwable;
 use UnexpectedValueException;
@@ -17,7 +18,7 @@ use UnexpectedValueException;
  * destination account/tag (the "Sync + Dedup + Match" service CLAUDE.md
  * names).
  */
-final class SyncService
+final class SyncService implements LedgerSyncInterface
 {
     private const MAX_PAGES = 1000;
 
@@ -34,6 +35,11 @@ final class SyncService
      * the same safety-guard shape used elsewhere in the core for an
      * otherwise-open-ended loop against external/injected dependencies).
      */
+    public function sync(string $account, string $network): void
+    {
+        $this->syncTransactions($account, $network);
+    }
+
     public function syncTransactions(string $address, string $network): void
     {
         $lastSyncedLedgerIndex = $this->transactionRepository->getLastSyncedLedgerIndex($address, $network);
@@ -227,8 +233,25 @@ final class SyncService
      */
     private function deliveredCandidates(PaymentIntent $intent): iterable
     {
-
         foreach ($this->findTransactions($intent->destinationAccount, $intent->destinationTag) as $candidate) {
+            if ($candidate->network !== $intent->network) {
+                /*
+                 * The same key pair is a valid account on testnet and mainnet,
+                 * and the tag counter is per account, not per network. A
+                 * merchant who switches the network keeps account and tag on
+                 * a refreshed quote, so a testnet payment would otherwise
+                 * settle a mainnet order. Test money never pays a real one.
+                 */
+                $this->logger->warning('LedgerDirect: skipping a transaction from another network on this tag', [
+                    'hash' => $candidate->hash,
+                    'destination_tag' => $intent->destinationTag,
+                    'transaction_network' => $candidate->network,
+                    'intent_network' => $intent->network,
+                ]);
+
+                continue;
+            }
+
             try {
                 $delivered = $candidate->getDeliveredAmount();
             } catch (UnexpectedValueException $exception) {

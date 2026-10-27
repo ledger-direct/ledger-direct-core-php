@@ -50,6 +50,16 @@ Services are built lazily and memoised. This is the object a Laravel service pro
 a facade points at, or a Symfony bundle registers as one service — the core itself holds no
 static state and ships no facade. Table DDL for your migration comes from `Xrpl\Schema`.
 
+Stellar is a second chain with its own root, `Stellar\LedgerDirectStellar::create(...)`, taking
+the same cross-cutting objects plus a `StellarPaymentRepositoryInterface`; a shop accepting both
+chains holds both roots. Its tables come from `Stellar\Schema`; XLM, USDC and EURC are supported, the issuers live in
+`Stellar\StablecoinRegistry` (see `INVARIANTS.md`, "Stellar"). The opt-in integration suite has a
+Stellar half too (`--testsuite integration`, live Horizon testnet).
+
+`ChainCatalog` describes what the core can do as data — chains, networks, assets, account formats,
+the identifier a customer puts on a payment — so a platform's configuration screen renders one
+panel per chain from it instead of hand-coding every chain.
+
 ## Local setup
 
 The git repo root is the project root — `docker-compose.yml`, `src/`, `tests/` all live directly in

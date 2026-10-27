@@ -14,11 +14,11 @@ means the same as in a WooCommerce PR.
 | Layer | Where | Runs | Catches | Does not catch |
 |---|---|---|---|---|
 | **Core unit** | `ledger-direct-core-php`, `vendor/bin/phpunit` | every push; PHP 8.2–8.4 and `--prefer-lowest`; merge gate | the contract itself: `PaymentIntent` schema, settlement and tolerance, the five payment states and their derivation order, plain-decimal amounts, the QR payment request, the sync's choice of transactions | anything a platform does with the result |
-| **Core integration** | same repo, `--testsuite integration`, opt-in | by hand after touching an `Oracle` | the real oracle APIs still answer in the shape the parsers expect | — (not CI-gating: network, rate limits) |
+| **Core integration** | same repo, `--testsuite integration`, opt-in | by hand after touching an `Oracle` or the Horizon client | the real oracle APIs still answer in the shape the parsers expect; the Stellar testnet spike account still shows its recorded payments and the registry's testnet issuers still exist with Circle's flags | — (not CI-gating: network, rate limits, testnet resets) |
 | **Plugin unit** | each plugin | every push; merge gate | presenters and view models (amounts never rounded, QR request, progress share), configuration validation (accent colour, logo path), the plugin's ports against the **real** core services with stubbed edges (HTTP, repository), wiring such as handler identifiers | templates, the database, HTTP |
 | **Plugin integration** | each plugin against a real shop in CI (dockware, Flashlight, a built Magento, the WordPress test suite with WooCommerce) | every push; merge gate | persistence of the payment record, order states and their transitions, the status endpoint's payload and refusals, the payment page rendering the markup contract, assets loaded where they should be | the ledger, exchange rates, browsers |
 | **Package tests** | `ledger-direct-payment-ui`, `npm test` | every push; `dist/` must be committed | the boundary (no shop system in `src/`), every `data-ld-*` attribute the scripts read is documented, no rounding in the browser, the contract names the harness anchors | that a template actually renders the contract — that is the plugin integration test's job |
-| **End-to-end, stage 1** | `ledger-direct-e2e` against the XRPL testnet, driven from `e2e.yml` in the plugin repos | nightly and on demand; **not a gate** | drift nothing in a repo caused: testnet resets, node behaviour, faucet, a new core release resolving through `^x.y`, shop images pulled as `latest`; the whole chain shop → core → ledger → shop with real transactions; PS-10's 35-minute wait | browser wallets, layout, accessibility |
+| **End-to-end, stage 1** | `ledger-direct-e2e` against the XRPL testnet (and the Stellar testnet with `--chain STELLAR`, since harness PR #10), driven from `e2e.yml` in the plugin repos | nightly and on demand; **not a gate** | drift nothing in a repo caused: testnet resets, node behaviour, faucet, a new core release resolving through `^x.y`, shop images pulled as `latest`; the whole chain shop → core → ledger → shop with real transactions; PS-10's 35-minute wait | browser wallets, layout, accessibility |
 | **Manual cases** | PW-01…PW-04 of the catalogue, page weight, accessibility | per PR that touches the payment page; ticked in the PR with order numbers and hashes | Crossmark/GemWallet payments, the network-mismatch hint, the phone layout, the Xaman scan taking over address, tag and amount | everything above, which is automated for a reason |
 
 Two rules hold across all layers. **The core is the reference**: when a plugin and the core
@@ -50,6 +50,14 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 
 "Proven" means ticked in a PR with order numbers and transaction hashes on the testnet.
 
+**Stellar** (core branch `feat/stellar`, the next minor): 54 unit tests under `tests/Stellar/` run in the
+same suite — recorded Horizon answers under `tests/Stellar/fixtures/` stand in for the network, the
+registry test compares the issuer constants with the checked-in Circle excerpt *and* Horizon's answers,
+`SchemaTest` holds the PostgreSQL system-column rule for the Stellar tables too — plus the opt-in
+`tests/Integration/Stellar/HorizonIntegrationTest` against the live testnet. No plugin carries Stellar
+yet, so there are no plugin integration rows and no nightly run; the harness is ready for both
+(`--chain STELLAR`, memo id, text memo and muxed destinations).
+
 ## What the contract is checked against
 
 | Invariant (`INVARIANTS.md`) | Checked by |
@@ -62,6 +70,10 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 | Payment request behind the QR code | core unit; plugin presenter tests; PW-04 by hand |
 | Throttled sync, one node request per receiving account | PS-08 in the harness, platform-specific observable per driver |
 | Key knowledge instead of login | PS-06, PS-07 in the harness; status-endpoint tests |
+| Stellar identifiers: memo id, muxed destination, canonical text memo all name the order; (hash, op_index) unique | core unit (`Stellar\SyncServiceTest`, `StellarPaymentTest`, `SchemaTest`) against recorded Horizon pages; harness `pay --id` per memo form |
+| Stellar settlement: the sum rule and the asset-class rule are the XRPL ones (XLM on a USDC quote is `wrong_asset`, never skipped) | core unit (`Stellar\SyncServiceTest`, cross-class cases mirroring `Xrpl\SyncServiceTest`); PS-04 in the harness once a plugin carries Stellar |
+| Stellar registry: issuers never typed, confirmed against Horizon; trust line and issuer flags before a quote | core unit against the checked-in Circle excerpt and Horizon answers; opt-in integration against the live testnet |
+| Testnet reset detection from the cursor's ledger bits | core unit (`Stellar\SyncServiceTest`, cursor from the future); harness detects the reset on its side |
 
 ## Known gaps
 
@@ -69,6 +81,8 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
   plan for both is in `Handover-E2E-Teststrategie.md`.
 - **PS-08 is proven by log or marker**, not by counting node requests at a proxy — until stage 2.
 - **Browser wallets are manual** (PW-01, PW-02): no test drives a wallet extension.
+- **The SEP-7 request behind the Stellar QR code is unverified by a wallet scan.** `Stellar\PaymentUri` is
+  pinned by unit tests only; the first adapter proves it the way PW-04 did for XRPL, with `qr-lab` as the tool.
 - **The testnet is not persistent.** A reset deletes every account; the harness detects it and asks
   for a new treasury.
 - **The Xaman scan (PW-04) is proven on all four platforms** (Shopware 1.4.0, Magento 1.1.0, PrestaShop
