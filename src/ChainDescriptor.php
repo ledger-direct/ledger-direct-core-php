@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core;
 
+use Hardcastle\LedgerDirect\Core\Identity\AccountEncoding;
 use InvalidArgumentException;
 
 /**
@@ -19,6 +20,8 @@ final readonly class ChainDescriptor
      * @param string $accountPattern a format check for the receiving account — never a proof the
      *     account exists or that the merchant controls it
      * @param list<AssetDescriptor> $assets in the order an adapter should offer them
+     * @param AccountEncoding|null $accountEncoding decodes the account and verifies its checksum,
+     *     on top of the pattern; null for a chain whose addresses carry none
      */
     public function __construct(
         public string $chain,
@@ -28,12 +31,21 @@ final readonly class ChainDescriptor
         public string $identifierLabel,
         public string $accountPattern,
         public array $assets,
+        public ?AccountEncoding $accountEncoding = null,
     ) {
     }
 
+    /**
+     * Whether $account can be a receiving account on this chain: the format
+     * matches **and** the address decodes with a valid checksum. A mistyped
+     * character from the right alphabet passes the pattern but not the
+     * checksum — that is the case this exists for. Still never a proof that
+     * the account exists or that the merchant controls it.
+     */
     public function isValidAccount(string $account): bool
     {
-        return preg_match($this->accountPattern, $account) === 1;
+        return preg_match($this->accountPattern, $account) === 1
+            && ($this->accountEncoding === null || $this->accountEncoding->isValid($account));
     }
 
     /** @return list<string> */
