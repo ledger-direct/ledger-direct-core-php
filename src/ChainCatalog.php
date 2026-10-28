@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core;
 
+use Hardcastle\LedgerDirect\Core\Identity\AccountEncoding;
 use Hardcastle\LedgerDirect\Core\Stellar\StablecoinRegistry as StellarRegistry;
 use Hardcastle\LedgerDirect\Core\Xrpl\StablecoinRegistry as XrplRegistry;
 use InvalidArgumentException;
@@ -84,6 +85,7 @@ final class ChainCatalog
             identifierLabel: 'Destination tag',
             // Ripple's base58 alphabet omits 0, O, I and l.
             accountPattern: '/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/D',
+            accountEncoding: AccountEncoding::XrplClassicAddress,
             assets: [
                 new AssetDescriptor('XRP', 'XRP', native: true, displayDecimals: 5, type: 'xrp-payment', pegCurrency: null, issuers: []),
                 new AssetDescriptor('RLUSD', 'RLUSD (Ripple USD)', native: false, displayDecimals: 2, type: 'rlusd-payment', pegCurrency: 'USD', issuers: [
@@ -110,6 +112,7 @@ final class ChainCatalog
             identifierLabel: 'Memo ID',
             // Stellar public keys are StrKey: G plus 55 base32 characters.
             accountPattern: '/^G[A-Z2-7]{55}$/D',
+            accountEncoding: AccountEncoding::StellarPublicKey,
             assets: [
                 new AssetDescriptor('XLM', 'XLM', native: true, displayDecimals: 5, type: 'stellar-xlm-payment', pegCurrency: null, issuers: []),
                 new AssetDescriptor('USDC', 'USDC (Circle)', native: false, displayDecimals: 2, type: 'stellar-usdc-payment', pegCurrency: 'USD', issuers: [

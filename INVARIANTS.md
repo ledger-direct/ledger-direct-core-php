@@ -523,3 +523,10 @@ worthless but harmless — they are not deleted, just out-ranked by the resync.
 
 - The issuer is **never** merchant-configurable.
 - SSL is always verified on outbound HTTP calls.
+- A receiving account is checked by **format and checksum** before it reaches a quote:
+  `ChainCatalog::chain($chain)->isValidAccount()` decodes the address
+  (`Identity\AccountEncoding`: XRPL base58check, Stellar StrKey with CRC16) and rejects one whose
+  checksum does not match. A mistyped character from the right alphabet passes a pattern; a quote
+  naming that address sends customers to a destination no wallet will pay. Adapters validate the
+  configured account through this method and nothing of their own. It proves neither that the
+  account exists nor that the merchant controls it.

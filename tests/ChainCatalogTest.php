@@ -105,6 +105,10 @@ final class ChainCatalogTest extends TestCase
         self::assertFalse($stellar->isValidAccount('MCGEFYLIJXTISHBB3LENEJNGDBU7XHEI4F2PTLY4OSZ5Q5YF7ZWVMAAAAAAAACP36ET2E'), 'a muxed address is not a receiving account');
         self::assertFalse($xrpl->isValidAccount("rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh\n"), 'a trailing newline from a form field is not part of the account');
         self::assertFalse($stellar->isValidAccount("GCGEFYLIJXTISHBB3LENEJNGDBU7XHEI4F2PTLY4OSZ5Q5YF7ZWVNQIA\n"));
+
+        // A mistyped character from the right alphabet: the pattern passes, the checksum does not.
+        self::assertFalse($xrpl->isValidAccount('rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTi'), 'XRPL checksum');
+        self::assertFalse($stellar->isValidAccount('GCGEFYLIJXTISHBB3LENEJNGDBU7XHEI4F2PTLY4OSZ5Q5YF7ZWVNQIB'), 'Stellar checksum');
     }
 
     public function testForTypeFindsChainAndAsset(): void
