@@ -1,13 +1,38 @@
 name: CI
 
+# The `changes` job classifies what a run changed (.github/actions/changes). A pull request that
+# touches only documentation (Markdown, docs/, changelog, licence) skips the test jobs; `changes`
+# itself always runs and is the green check such a pull request reports. A newer commit on a pull
+# request cancels the run of the older one.
+
 on:
   push:
     branches: [master]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.changes.outputs.docs_only }}
+      runtime: ${{ steps.changes.outputs.runtime }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # pull_request: the merge commit and both parents; push: the pushed range
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
+      - id: changes
+        uses: ./.github/actions/changes
+
   test:
     name: PHP ${{ matrix.php-version }}
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -36,6 +61,8 @@ jobs:
 
   lowest:
     name: PHP 8.2, lowest dependencies
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
 
     steps:
