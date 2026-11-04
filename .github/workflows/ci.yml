@@ -32,7 +32,9 @@ jobs:
   test:
     name: PHP ${{ matrix.php-version }}
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    # Fail-safe: a failed `changes` job leaves its outputs empty, and the tests run. Without
+    # !cancelled() the job would be skipped instead, and skipped counts as passed.
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -62,7 +64,8 @@ jobs:
   lowest:
     name: PHP 8.2, lowest dependencies
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    # Fail-safe as for `test`.
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
 
     steps:
