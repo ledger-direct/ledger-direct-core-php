@@ -104,6 +104,22 @@ contract every repository implementation has to keep — extend it, implement `r
 the newest-first ordering, the per-network cursor and the random counter start are covered. It
 needs PHPUnit, which the core only suggests.
 
+## Continuous integration
+
+`ci.yml` ends in one job that sums up the others, *CI passed*, the check a merge into `master`
+requires. A job skipped on purpose (a pull request that changes only documentation) counts as
+passed, a failed or cancelled one does not. `ci.yml` also runs the whole suite every Monday.
+
+The rules for `master` are a GitHub ruleset, kept in `.github/rulesets/master.json`: changes only
+through a pull request, no approval needed, *CI passed* green on its last commit, merged as a squash
+or a merge commit; no force push, no deletion. Repository admins may merge a pull request without
+the checks, never push to `master` directly. A change to the rules is a pull request that changes
+the file; after the merge it is applied on GitHub (`gh api -X PUT repos/<owner>/<repo>/rulesets/<id>
+--input .github/rulesets/master.json`, the first time `-X POST repos/<owner>/<repo>/rulesets`).
+Every Monday, and on demand, `ci.yml` checks that the ruleset on GitHub matches the file
+(`.github/rulesets/check.sh`). Who may bypass the rules is not part of that check: GitHub shows the
+bypass list only to admins of the repository.
+
 ## Distribution
 
 At dev time this is a versioned Composer package. At release time it is bundled into each
