@@ -40,7 +40,7 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 
 | Repository | Unit | Integration | CI gate | Nightly E2E | Manual cases |
 |---|---|---|---|---|---|
-| `ledger-direct-core-php` 0.11.0 | 330 (56 of them Stellar, 22 Xahau) | opt-in (oracles, Horizon testnet) | PHP 8.2–8.4, lowest deps | — | — |
+| `ledger-direct-core-php` 0.11.0 | 331 (56 of them Stellar, 23 Xahau) | opt-in (oracles, Horizon testnet) | PHP 8.2–8.4, lowest deps | — | — |
 | `ledger-direct-payment-ui` 0.1.1 | 7 (Node) | fixture page | tests, build, `dist` committed | — | fixture in a browser |
 | `ledger-direct-shopware6` 1.4.4 | 112 | 10 (dockware 6.7) | shopware-cli validate, PHPUnit | **yes** (`e2e.yml`, dockware) | PS-01…11, PW-01…04 proven on 1.4.0 |
 | `ledger-direct-prestashop` 0.5.1 | 47 | 52 (Flashlight 9.0) | syntax 8.2–8.4, CS, PHPStan 9.0/9.1, PHPUnit, release zip | **yes** (`e2e.yml`, Flashlight) | PS-01…11; PW-04 proven |
@@ -58,11 +58,11 @@ registry test compares the issuer constants with the checked-in Circle excerpt *
 yet, so there are no plugin integration rows and no nightly run; the harness is ready for both
 (`--chain STELLAR`, memo id, text memo and muxed destinations).
 
-**Xahau** (core 0.11.0): 22 unit tests. `tests/Xahau/XahauSyncTest` runs the unchanged XRPL sync on
+**Xahau** (core 0.11.0): 23 unit tests. `tests/Xahau/XahauSyncTest` runs the unchanged XRPL sync on
 `account_tx` answers recorded on the Xahau testnet (2026-11-06): tagged XAH, a partial payment topped
 up, a self-issued token as the wrong asset, two `Remit`s that never count, and the `lgrIdxsInvalid`
-recovery. `XahauWiringTest` pins every place the chain parameter reaches (endpoints, rate-limit
-error, quote, root, throttle key, payment request, tables). The XRPL tests are unchanged — the
+recovery. `XahauWiringTest` pins every place the chain parameter reaches (endpoints, error
+messages, quote, root, throttle key, payment request, tables). The XRPL tests are unchanged — the
 proof that the parameter defaults to the XRP Ledger. No plugin and no harness chain yet.
 
 ## What the contract is checked against

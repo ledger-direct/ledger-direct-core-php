@@ -6,7 +6,6 @@ namespace Hardcastle\LedgerDirect\Core\Payment;
 
 use Hardcastle\LedgerDirect\Core\Clock\SystemClock;
 use Hardcastle\LedgerDirect\Core\Port\ConfigProviderInterface;
-use Hardcastle\LedgerDirect\Core\Price\PriceQuote;
 use Hardcastle\LedgerDirect\Core\Price\PriceService;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
 use InvalidArgumentException;
@@ -79,7 +78,7 @@ final class PaymentIntentService
             ?? throw new InvalidArgumentException("Unsupported base_asset '{$baseAsset}'.");
 
         $network = $this->configProvider->getNetwork($this->chain);
-        $priceQuote = $this->priceQuote($total, $quoteCurrency, $baseAsset, $network);
+        $priceQuote = $this->priceService->getCryptoPriceForOrder($total, $quoteCurrency, $baseAsset, $network);
         [$destinationAccount, $destinationTag] = $this->resolveDestination($existing);
 
         return PaymentIntent::quote(
@@ -94,28 +93,6 @@ final class PaymentIntentService
             destinationAccount: $destinationAccount,
             destinationTag: $destinationTag,
             expiry: $this->clock->now()->getTimestamp() + $this->configProvider->getQuoteExpirySeconds(),
-        );
-    }
-
-    /**
-     * XRPL keeps its own path, which wraps tokens in the XRPL registry's
-     * amounts. Xahau has only its native asset, whose amount is the number
-     * itself, as XRP's is.
-     */
-    private function priceQuote(float $total, string $quoteCurrency, string $baseAsset, string $network): PriceQuote
-    {
-        if ($this->chain === 'XRPL') {
-            return $this->priceService->getCryptoPriceForOrder($total, $quoteCurrency, $baseAsset, $network);
-        }
-
-        $quote = $this->priceService->quoteAmount($total, $quoteCurrency, $baseAsset, $network);
-
-        return new PriceQuote(
-            baseAsset: $quote->baseAsset,
-            quoteCurrency: $quote->quoteCurrency,
-            pairing: $quote->pairing,
-            exchangeRate: $quote->exchangeRate,
-            amountRequested: (float) $quote->amount,
         );
     }
 

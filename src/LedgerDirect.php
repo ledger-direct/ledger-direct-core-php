@@ -16,12 +16,12 @@ use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncService;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncThrottle;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplClient;
+use InvalidArgumentException;
 use Psr\Clock\ClockInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Log\LoggerInterface;
-use InvalidArgumentException;
 use Psr\SimpleCache\CacheInterface;
 
 /**
@@ -107,12 +107,6 @@ final class LedgerDirect
             $rateFreshTtlSeconds,
             $chain,
         );
-    }
-
-    /** 'XRPL' or 'XAHAU'. */
-    public function chain(): string
-    {
-        return $this->chain;
     }
 
     public function clock(): ClockInterface

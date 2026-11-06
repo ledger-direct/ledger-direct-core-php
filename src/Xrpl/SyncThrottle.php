@@ -30,15 +30,14 @@ use Throwable;
  */
 final class SyncThrottle
 {
-    /** Same rule as the rate cache: the network must be in the key, dots are PSR-16-legal. */
+    /** Same rule as the rate cache: chain and network must be in the key, dots are PSR-16-legal. */
     private const KEY_PREFIX = 'ledger-direct.sync.v1';
 
     private readonly ClockInterface $clock;
 
     /**
-     * @param string $chain part of the key for every chain but XRPL, whose keys stay as they were:
-     *     an account can exist on the XRP Ledger and on Xahau, and one chain's sync must not
-     *     hold back the other's
+     * @param string $chain part of the key: the same account can exist on the XRP Ledger and on
+     *     Xahau, and one chain's sync must not hold back the other's
      */
     public function __construct(
         private readonly CacheInterface $cache,
@@ -109,10 +108,6 @@ final class SyncThrottle
 
     private function key(string $network, string $account): string
     {
-        $parts = $this->chain === 'XRPL'
-            ? [self::KEY_PREFIX, $network, $account]
-            : [self::KEY_PREFIX, strtolower($this->chain), $network, $account];
-
-        return implode('.', $parts);
+        return implode('.', [self::KEY_PREFIX, strtolower($this->chain), $network, $account]);
     }
 }

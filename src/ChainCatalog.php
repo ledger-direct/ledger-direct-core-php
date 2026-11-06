@@ -29,6 +29,9 @@ final class ChainCatalog
     public const STELLAR = 'STELLAR';
     public const XAHAU = 'XAHAU';
 
+    /** The classic address of the XRP Ledger and of Xahau. Ripple's base58 alphabet omits 0, O, I and l. */
+    private const XRPL_ACCOUNT_PATTERN = '/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/D';
+
     /** @var list<ChainDescriptor>|null */
     private static ?array $chains = null;
 
@@ -84,8 +87,7 @@ final class ChainCatalog
             nativeAsset: 'XRP',
             networks: ['mainnet', 'testnet'],
             identifierLabel: 'Destination tag',
-            // Ripple's base58 alphabet omits 0, O, I and l.
-            accountPattern: '/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/D',
+            accountPattern: self::XRPL_ACCOUNT_PATTERN,
             accountEncoding: AccountEncoding::XrplClassicAddress,
             assets: [
                 new AssetDescriptor('XRP', 'XRP', native: true, displayDecimals: 5, type: 'xrp-payment', pegCurrency: null, issuers: []),
@@ -141,8 +143,7 @@ final class ChainCatalog
             nativeAsset: 'XAH',
             networks: ['mainnet', 'testnet'],
             identifierLabel: 'Destination tag',
-            // The XRP Ledger's address format, unchanged.
-            accountPattern: '/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/D',
+            accountPattern: self::XRPL_ACCOUNT_PATTERN,
             accountEncoding: AccountEncoding::XrplClassicAddress,
             assets: [
                 new AssetDescriptor('XAH', 'XAH', native: true, displayDecimals: 5, type: 'xahau-xah-payment', pegCurrency: null, issuers: []),

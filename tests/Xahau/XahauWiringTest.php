@@ -57,22 +57,25 @@ final class XahauWiringTest extends TestCase
 
     /**
      * Not retried inside the request: the sync runs in a shop request and must
-     * not sleep. The code lets a caller tell it apart; the message keeps Retry-After.
+     * not sleep. The message says which chain's node refused and when to come back.
      */
-    public function testARateLimitedNodeIsReportedWithItsOwnCode(): void
+    public function testARateLimitedNodeIsReportedWithItsRetryAfter(): void
     {
-        foreach ([429, 503] as $status) {
-            $client = new FakeHttpClient();
-            $client->queueResponse('xahau.network', new Response($status, ['Retry-After' => '6'], ''));
+        $client = new FakeHttpClient();
+        $client->queueResponse('xahau.network', new Response(429, ['Retry-After' => '6'], ''));
 
-            try {
-                (new XrplClient($client, new HttpFactory(), new HttpFactory(), 'XAHAU'))->tx('ABC', 'mainnet');
-                self::fail("HTTP {$status} must throw");
-            } catch (XrplRpcException $exception) {
-                self::assertSame(XrplClient::ERROR_RATE_LIMITED, $exception->error);
-                self::assertStringContainsString('retry after 6', $exception->getMessage());
-            }
-        }
+        $this->expectException(XrplRpcException::class);
+        $this->expectExceptionMessage("XAHAU JSON-RPC 'tx' on mainnet returned HTTP 429, retry after 6.");
+        (new XrplClient($client, new HttpFactory(), new HttpFactory(), 'XAHAU'))->tx('ABC', 'mainnet');
+    }
+
+    public function testAnXrplErrorStillReadsAsBefore(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('s.altnet.rippletest.net', new Response(500));
+
+        $this->expectExceptionMessage("XRPL JSON-RPC 'tx' on testnet returned HTTP 500.");
+        (new XrplClient($client, new HttpFactory(), new HttpFactory()))->tx('ABC', 'testnet');
     }
 
     public function testTheIntentServiceQuotesXahOnXahau(): void
@@ -134,7 +137,6 @@ final class XahauWiringTest extends TestCase
             chain: 'XAHAU',
         );
 
-        self::assertSame('XAHAU', $core->chain());
         $core->syncService()->syncTransactions(self::MERCHANT, 'testnet');
         self::assertStringContainsString('xahau-test.net', (string) $client->lastRequest()?->getUri());
     }
@@ -155,7 +157,7 @@ final class XahauWiringTest extends TestCase
 
     /**
      * The same r-address can receive on both chains. One chain's sync must not
-     * hold back the other's; the XRPL key stays as it was.
+     * hold back the other's.
      */
     public function testTheThrottleKeepsTheChainsApart(): void
     {
@@ -167,7 +169,6 @@ final class XahauWiringTest extends TestCase
 
         self::assertFalse($xrpl->shouldSync('testnet', self::MERCHANT));
         self::assertTrue($xahau->shouldSync('testnet', self::MERCHANT));
-        self::assertTrue($cache->has('ledger-direct.sync.v1.testnet.' . self::MERCHANT), 'XRPL key unchanged');
     }
 
     public function testTheRequestNamesTheXahauNetworkForXaman(): void

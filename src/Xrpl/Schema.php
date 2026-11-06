@@ -39,11 +39,6 @@ final class Schema
     public const TABLE_XAHAU_TX = 'ledger_direct_xahau_tx';
     public const TABLE_XAHAU_DESTINATION_TAG = 'ledger_direct_xahau_destination_tag';
 
-    private const TABLES_BY_CHAIN = [
-        'XRPL' => [self::TABLE_TX, self::TABLE_DESTINATION_TAG],
-        'XAHAU' => [self::TABLE_XAHAU_TX, self::TABLE_XAHAU_DESTINATION_TAG],
-    ];
-
     /**
      * Names PostgreSQL gives every table implicitly; a user column cannot
      * have them. Kept here so the rule is checked, not remembered — every
@@ -64,11 +59,14 @@ final class Schema
      */
     public static function tables(string $chain = 'XRPL'): array
     {
-        [$txTable, $tagTable] = self::TABLES_BY_CHAIN[$chain]
-            ?? throw new InvalidArgumentException("Unsupported chain '{$chain}'.");
+        [$txTable, $tagTable, $index] = match ($chain) {
+            'XRPL' => [self::TABLE_TX, self::TABLE_DESTINATION_TAG, 'ledger_direct_'],
+            'XAHAU' => [self::TABLE_XAHAU_TX, self::TABLE_XAHAU_DESTINATION_TAG, 'ledger_direct_xahau_'],
+            default => throw new InvalidArgumentException("Unsupported chain '{$chain}'."),
+        };
 
-        $tables = [
-            self::TABLE_TX => [
+        return [
+            $txTable => [
                 'columns' => [
                     ['name' => 'id', 'type' => 'int', 'unsigned' => true, 'nullable' => false, 'autoincrement' => true],
                     // A ledger index only means anything within one network; the
@@ -91,15 +89,15 @@ final class Schema
                 ],
                 'primary' => ['id'],
                 'unique' => [
-                    'uniq_ledger_direct_hash' => ['hash'],
+                    'uniq_' . $index . 'hash' => ['hash'],
                 ],
                 'indexes' => [
-                    'idx_ledger_direct_destination' => ['destination', 'destination_tag'],
-                    'idx_ledger_direct_ledger_index' => ['ledger_index'],
-                    'idx_ledger_direct_cursor' => ['destination', 'network', 'ledger_index'],
+                    'idx_' . $index . 'destination' => ['destination', 'destination_tag'],
+                    'idx_' . $index . 'ledger_index' => ['ledger_index'],
+                    'idx_' . $index . 'cursor' => ['destination', 'network', 'ledger_index'],
                 ],
             ],
-            self::TABLE_DESTINATION_TAG => [
+            $tagTable => [
                 'columns' => [
                     ['name' => 'destination_account', 'type' => 'string', 'length' => 64, 'nullable' => false],
                     // One row per receiving account, a counter that starts at a
@@ -111,24 +109,6 @@ final class Schema
                 'unique' => [],
                 'indexes' => [],
             ],
-        ];
-
-        if ($chain === 'XRPL') {
-            return $tables;
-        }
-
-        $rename = static fn (array $named): array => array_combine(
-            array_map(static fn (string $name): string => str_replace('ledger_direct_', 'ledger_direct_xahau_', $name), array_keys($named)),
-            array_values($named),
-        );
-
-        $tx = $tables[self::TABLE_TX];
-        $tx['unique'] = $rename($tx['unique']);
-        $tx['indexes'] = $rename($tx['indexes']);
-
-        return [
-            $txTable => $tx,
-            $tagTable => $tables[self::TABLE_DESTINATION_TAG],
         ];
     }
 

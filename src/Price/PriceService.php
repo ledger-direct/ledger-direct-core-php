@@ -94,7 +94,7 @@ final class PriceService
         string $baseAsset,
         string $network,
     ): PriceQuote {
-        if (!in_array($baseAsset, [XrpPriceProvider::CRYPTO_CODE, RlusdPriceProvider::CRYPTO_CODE, UsdcPriceProvider::CRYPTO_CODE], true)) {
+        if (!in_array($baseAsset, [XrpPriceProvider::CRYPTO_CODE, RlusdPriceProvider::CRYPTO_CODE, UsdcPriceProvider::CRYPTO_CODE, XahPriceProvider::CRYPTO_CODE], true)) {
             // Before any oracle work: an XLM or EURC caller must learn it is on the
             // wrong method, not that an oracle happened to have no rate.
             throw new InvalidArgumentException(
@@ -105,7 +105,8 @@ final class PriceService
         $quote = $this->quoteAmount($total, $quoteCurrency, $baseAsset, $network);
 
         $amountRequested = match ($baseAsset) {
-            XrpPriceProvider::CRYPTO_CODE => (float) $quote->amount,
+            // A native amount is the number itself, on the XRP Ledger and on Xahau.
+            XrpPriceProvider::CRYPTO_CODE, XahPriceProvider::CRYPTO_CODE => (float) $quote->amount,
             RlusdPriceProvider::CRYPTO_CODE => $this->stablecoinRegistry->getRLUSDAmount($network, $quote->amount),
             UsdcPriceProvider::CRYPTO_CODE => $this->stablecoinRegistry->getUSDCAmount($network, $quote->amount),
             default => throw new InvalidArgumentException(

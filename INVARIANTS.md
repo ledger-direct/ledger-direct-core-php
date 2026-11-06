@@ -442,8 +442,8 @@ support).
 
 Fixed in `XrplClient`: `https://xahau.network/` (mainnet, network id 21337) and
 `https://xahau-test.net/` (testnet, 21338), run by Xahau's foundation; not merchant-configurable,
-like the XRP Ledger's. A node that answers HTTP 429 or 503 raises an `XrplRpcException` with the
-error code `rateLimited` and the `Retry-After` in the message; nothing sleeps inside a shop
+like the XRP Ledger's. A node that refuses with HTTP 429 or 503 raises an `XrplRpcException` like
+any other failed call, with the node's `Retry-After` in the message; nothing sleeps inside a shop
 request, and `SyncThrottle` stays mandatory. The mainnet node sits behind rate limits counted in
 units with `RateLimit-*` headers and accepts API keys; a configurable endpoint or a key are the
 documented alternatives if the public node stops serving shops.
