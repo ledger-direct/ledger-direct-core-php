@@ -16,15 +16,22 @@ use Psr\Clock\ClockInterface;
  * into a full PaymentIntent for an order — the piece CLAUDE.md doesn't name
  * on its own. Not a 1:1 port of anything in ground truth; that logic is
  * entangled with Shopware entities there.
+ *
+ * Serves the XRP Ledger and Xahau, which share the record's shape: a
+ * destination tag, a native amount as a number, an issued one as an
+ * IssuedCurrencyAmount. The chain is fixed per instance.
  */
 final class PaymentIntentService
 {
-    private const CHAIN = 'XRPL';
-
-    private const TYPE_BY_ASSET = [
-        'XRP' => 'xrp-payment',
-        'RLUSD' => 'rlusd-payment',
-        'USDC' => 'usdc-payment',
+    private const TYPE_BY_CHAIN_AND_ASSET = [
+        'XRPL' => [
+            'XRP' => 'xrp-payment',
+            'RLUSD' => 'rlusd-payment',
+            'USDC' => 'usdc-payment',
+        ],
+        'XAHAU' => [
+            'XAH' => 'xahau-xah-payment',
+        ],
     ];
 
     private readonly ClockInterface $clock;
@@ -32,13 +39,19 @@ final class PaymentIntentService
     /**
      * @param ClockInterface|null $clock what "now" is for the quote's expiry; the wall clock by
      *     default, a frozen one in tests
+     * @param string $chain 'XRPL' or 'XAHAU'
      */
     public function __construct(
         private readonly PriceService $priceService,
         private readonly DestinationTagService $destinationTagService,
         private readonly ConfigProviderInterface $configProvider,
         ?ClockInterface $clock = null,
+        private readonly string $chain = 'XRPL',
     ) {
+        if (!isset(self::TYPE_BY_CHAIN_AND_ASSET[$chain])) {
+            throw new InvalidArgumentException("Unsupported chain '{$chain}'.");
+        }
+
         $this->clock = $clock ?? new SystemClock();
     }
 
@@ -57,18 +70,20 @@ final class PaymentIntentService
         string $baseAsset,
         ?PaymentIntent $existing = null,
     ): PaymentIntent {
-        if (!$this->configProvider->isAssetEnabled(self::CHAIN, $baseAsset)) {
+        if (!$this->configProvider->isAssetEnabled($this->chain, $baseAsset)) {
             throw new AssetNotAcceptedException("Payments in {$baseAsset} are not currently accepted.");
         }
 
-        $network = $this->configProvider->getNetwork(self::CHAIN);
+        $type = self::TYPE_BY_CHAIN_AND_ASSET[$this->chain][$baseAsset]
+            ?? throw new InvalidArgumentException("Unsupported base_asset '{$baseAsset}'.");
+
+        $network = $this->configProvider->getNetwork($this->chain);
         $priceQuote = $this->priceService->getCryptoPriceForOrder($total, $quoteCurrency, $baseAsset, $network);
         [$destinationAccount, $destinationTag] = $this->resolveDestination($existing);
 
         return PaymentIntent::quote(
-            type: self::TYPE_BY_ASSET[$baseAsset]
-                ?? throw new InvalidArgumentException("Unsupported base_asset '{$baseAsset}'."),
-            chain: self::CHAIN,
+            type: $type,
+            chain: $this->chain,
             network: $network,
             baseAsset: $priceQuote->baseAsset,
             quoteCurrency: $priceQuote->quoteCurrency,
@@ -86,7 +101,7 @@ final class PaymentIntentService
      */
     private function resolveDestination(?PaymentIntent $existing): array
     {
-        $currentDestinationAccount = $this->configProvider->getDestinationAccount(self::CHAIN);
+        $currentDestinationAccount = $this->configProvider->getDestinationAccount($this->chain);
 
         if ($existing !== null && $existing->destinationAccount === $currentDestinationAccount) {
             return [$existing->destinationAccount, $existing->destinationTag];

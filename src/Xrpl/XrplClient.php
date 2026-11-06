@@ -16,6 +16,9 @@ use Psr\Http\Message\StreamFactoryInterface;
  * (`account_tx`, `tx`). Returns raw, undecoded ledger data — hydrating it
  * into domain objects (e.g. XrplTransaction) is a caller's job (SyncService),
  * not this class's.
+ *
+ * Also the transport for Xahau, which speaks the same protocol on its own
+ * nodes: the chain picks the endpoint, nothing else changes.
  */
 final class XrplClient
 {
@@ -27,16 +30,34 @@ final class XrplClient
      */
     public const ERROR_LEDGER_INDEXES_INVALID = 'lgrIdxsInvalid';
 
+    /**
+     * Fixed public endpoints per chain and network (INVARIANTS.md, "Xahau",
+     * Endpoints). Xahau's are run by its foundation; a merchant cannot
+     * change them.
+     */
     private const JSON_RPC_URLS = [
-        'mainnet' => 'https://xrplcluster.com/',
-        'testnet' => 'https://s.altnet.rippletest.net:51234/',
+        'XRPL' => [
+            'mainnet' => 'https://xrplcluster.com/',
+            'testnet' => 'https://s.altnet.rippletest.net:51234/',
+        ],
+        'XAHAU' => [
+            'mainnet' => 'https://xahau.network/',
+            'testnet' => 'https://xahau-test.net/',
+        ],
     ];
 
+    /**
+     * @param string $chain 'XRPL' or 'XAHAU' — which nodes to ask
+     */
     public function __construct(
         private readonly ClientInterface $httpClient,
         private readonly RequestFactoryInterface $requestFactory,
         private readonly StreamFactoryInterface $streamFactory,
+        private readonly string $chain = 'XRPL',
     ) {
+        if (!isset(self::JSON_RPC_URLS[$chain])) {
+            throw new InvalidArgumentException("Unsupported chain '{$chain}'.");
+        }
     }
 
     /**
@@ -68,7 +89,7 @@ final class XrplClient
             $error = isset($result['error']) ? (string) $result['error'] : null;
 
             throw new XrplRpcException(
-                "XRPL account_tx on {$network} failed: " . ($error ?? 'unknown error') . '.',
+                "{$this->chain} account_tx on {$network} failed: " . ($error ?? 'unknown error') . '.',
                 error: $error,
             );
         }
@@ -99,7 +120,7 @@ final class XrplClient
             $error = isset($result['error']) ? (string) $result['error'] : null;
 
             throw new XrplRpcException(
-                "XRPL tx on {$network} failed: " . ($error ?? 'unknown error') . '.',
+                "{$this->chain} tx on {$network} failed: " . ($error ?? 'unknown error') . '.',
                 error: $error,
             );
         }
@@ -118,7 +139,7 @@ final class XrplClient
      */
     private function callRpc(string $network, string $method, array $paramsObject): array
     {
-        $url = self::urlForNetwork($network);
+        $url = $this->urlForNetwork($network);
 
         try {
             $body = json_encode([
@@ -128,7 +149,7 @@ final class XrplClient
                 'id' => 1,
             ], JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
-            throw new XrplRpcException("Could not encode XRPL {$method} request.", previous: $exception);
+            throw new XrplRpcException("Could not encode {$this->chain} {$method} request.", previous: $exception);
         }
 
         $request = $this->requestFactory->createRequest('POST', $url)
@@ -139,37 +160,44 @@ final class XrplClient
             $response = $this->httpClient->sendRequest($request);
         } catch (ClientExceptionInterface $exception) {
             throw new XrplRpcException(
-                "XRPL JSON-RPC transport failure calling '{$method}' on {$network}.",
+                "{$this->chain} JSON-RPC transport failure calling '{$method}' on {$network}.",
                 previous: $exception,
             );
         }
 
         $status = $response->getStatusCode();
         if ($status < 200 || $status >= 300) {
-            throw new XrplRpcException("XRPL JSON-RPC '{$method}' on {$network} returned HTTP {$status}.");
+            // A rate-limited node (429, 503) says when to come back. Nothing waits here: a
+            // sync runs inside a shop request, and the next one after the throttle retries.
+            $retryAfter = $response->getHeaderLine('Retry-After');
+
+            throw new XrplRpcException(
+                "{$this->chain} JSON-RPC '{$method}' on {$network} returned HTTP {$status}"
+                    . ($retryAfter !== '' ? ", retry after {$retryAfter}" : '') . '.'
+            );
         }
 
         $payload = json_decode((string) $response->getBody(), true);
         if (!is_array($payload)) {
-            throw new XrplRpcException("XRPL JSON-RPC '{$method}' on {$network} returned a malformed response body.");
+            throw new XrplRpcException("{$this->chain} JSON-RPC '{$method}' on {$network} returned a malformed response body.");
         }
 
         if (isset($payload['error'])) {
             throw new XrplRpcException(
-                "XRPL JSON-RPC '{$method}' on {$network} failed: {$payload['error']}."
+                "{$this->chain} JSON-RPC '{$method}' on {$network} failed: {$payload['error']}."
             );
         }
 
         $result = $payload['result'] ?? null;
         if (!is_array($result)) {
-            throw new XrplRpcException("XRPL JSON-RPC '{$method}' on {$network} returned no result.");
+            throw new XrplRpcException("{$this->chain} JSON-RPC '{$method}' on {$network} returned no result.");
         }
 
         return $result;
     }
 
-    private static function urlForNetwork(string $network): string
+    private function urlForNetwork(string $network): string
     {
-        return self::JSON_RPC_URLS[$network] ?? throw new InvalidArgumentException("Unsupported network '{$network}'.");
+        return self::JSON_RPC_URLS[$this->chain][$network] ?? throw new InvalidArgumentException("Unsupported network '{$network}'.");
     }
 }

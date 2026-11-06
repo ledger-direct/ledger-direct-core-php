@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Xrpl;
 
+use InvalidArgumentException;
+
 /**
  * The two tables the core needs, as data — the "SQL/DDL as a constant or
  * migration template" INVARIANTS.md ("Tables") promises. The core never
@@ -30,6 +32,14 @@ final class Schema
     public const TABLE_DESTINATION_TAG = 'ledger_direct_xrpl_destination_tag';
 
     /**
+     * Xahau keeps the same columns in tables of its own: its own transactions
+     * and its own tag counter, never a row shared with the XRP Ledger, even
+     * for an account that exists on both (INVARIANTS.md, "Xahau", Tables).
+     */
+    public const TABLE_XAHAU_TX = 'ledger_direct_xahau_tx';
+    public const TABLE_XAHAU_DESTINATION_TAG = 'ledger_direct_xahau_destination_tag';
+
+    /**
      * Names PostgreSQL gives every table implicitly; a user column cannot
      * have them. Kept here so the rule is checked, not remembered — every
      * chain's schema is tested against it.
@@ -43,11 +53,20 @@ final class Schema
      *     unique: array<string, list<string>>,
      *     indexes: array<string, list<string>>,
      * }>
+     * @param string $chain 'XRPL' (the default, unchanged since 0.9) or 'XAHAU'. Xahau's index
+     *     names carry the chain: PostgreSQL wants an index name unique in the schema, not
+     *     only in its table.
      */
-    public static function tables(): array
+    public static function tables(string $chain = 'XRPL'): array
     {
+        [$txTable, $tagTable, $index] = match ($chain) {
+            'XRPL' => [self::TABLE_TX, self::TABLE_DESTINATION_TAG, 'ledger_direct_'],
+            'XAHAU' => [self::TABLE_XAHAU_TX, self::TABLE_XAHAU_DESTINATION_TAG, 'ledger_direct_xahau_'],
+            default => throw new InvalidArgumentException("Unsupported chain '{$chain}'."),
+        };
+
         return [
-            self::TABLE_TX => [
+            $txTable => [
                 'columns' => [
                     ['name' => 'id', 'type' => 'int', 'unsigned' => true, 'nullable' => false, 'autoincrement' => true],
                     // A ledger index only means anything within one network; the
@@ -70,15 +89,15 @@ final class Schema
                 ],
                 'primary' => ['id'],
                 'unique' => [
-                    'uniq_ledger_direct_hash' => ['hash'],
+                    'uniq_' . $index . 'hash' => ['hash'],
                 ],
                 'indexes' => [
-                    'idx_ledger_direct_destination' => ['destination', 'destination_tag'],
-                    'idx_ledger_direct_ledger_index' => ['ledger_index'],
-                    'idx_ledger_direct_cursor' => ['destination', 'network', 'ledger_index'],
+                    'idx_' . $index . 'destination' => ['destination', 'destination_tag'],
+                    'idx_' . $index . 'ledger_index' => ['ledger_index'],
+                    'idx_' . $index . 'cursor' => ['destination', 'network', 'ledger_index'],
                 ],
             ],
-            self::TABLE_DESTINATION_TAG => [
+            $tagTable => [
                 'columns' => [
                     ['name' => 'destination_account', 'type' => 'string', 'length' => 64, 'nullable' => false],
                     // One row per receiving account, a counter that starts at a
@@ -95,15 +114,15 @@ final class Schema
 
     /**
      * One `CREATE TABLE IF NOT EXISTS` per table, in tables() order, with
-     * $prefix in front of every table name (e.g. `ps_`, `wp_`).
+     * $prefix in front of every table name (e.g. `ps_`, `wp_`), for the given chain's tables.
      *
      * @return list<string>
      */
-    public static function mysql(string $prefix = '', string $engine = 'InnoDB', string $charset = 'utf8mb4'): array
+    public static function mysql(string $prefix = '', string $engine = 'InnoDB', string $charset = 'utf8mb4', string $chain = 'XRPL'): array
     {
         $statements = [];
 
-        foreach (self::tables() as $table => $definition) {
+        foreach (self::tables($chain) as $table => $definition) {
             $lines = [];
 
             foreach ($definition['columns'] as $column) {

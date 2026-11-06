@@ -24,18 +24,45 @@ use PHPUnit\Framework\TestCase;
 
 final class ChainCatalogTest extends TestCase
 {
-    public function testListsBothChainsWithTheirAssetsInOrder(): void
+    public function testListsTheChainsWithTheirAssetsInOrder(): void
     {
         $chains = ChainCatalog::chains();
 
-        self::assertSame(['XRPL', 'STELLAR'], array_map(static fn ($c): string => $c->chain, $chains));
+        self::assertSame(['XRPL', 'STELLAR', 'XAHAU'], array_map(static fn ($c): string => $c->chain, $chains));
         self::assertSame(['XRP', 'RLUSD', 'USDC'], ChainCatalog::chain('XRPL')->assetCodes());
         self::assertSame(['XLM', 'USDC', 'EURC'], ChainCatalog::chain('STELLAR')->assetCodes());
         self::assertSame(['mainnet', 'testnet'], ChainCatalog::chain('XRPL')->networks);
         self::assertSame('Destination tag', ChainCatalog::chain('XRPL')->identifierLabel);
         self::assertSame('Memo ID', ChainCatalog::chain('STELLAR')->identifierLabel);
         self::assertTrue(ChainCatalog::has('STELLAR'));
-        self::assertFalse(ChainCatalog::has('XAHAU'));
+        self::assertFalse(ChainCatalog::has('SOLANA'));
+    }
+
+    /**
+     * Xahau: the XRP Ledger's account format and identifier, its own native
+     * asset, no issued assets yet (INVARIANTS.md, "Xahau").
+     */
+    public function testXahauIsAChainOfItsOwnWithXahOnly(): void
+    {
+        $xahau = ChainCatalog::chain('XAHAU');
+
+        self::assertSame('Xahau', $xahau->label);
+        self::assertSame('XAH', $xahau->nativeAsset);
+        self::assertSame(['mainnet', 'testnet'], $xahau->networks);
+        self::assertSame('Destination tag', $xahau->identifierLabel);
+        self::assertSame(['XAH'], $xahau->assetCodes());
+
+        $xah = $xahau->asset('XAH');
+        self::assertTrue($xah->native);
+        self::assertSame('xahau-xah-payment', $xah->type);
+        self::assertSame(5, $xah->displayDecimals);
+        self::assertNull($xah->pegCurrency);
+        self::assertSame([], $xah->issuers);
+
+        // The same address is valid on both chains; only the configuration tells them apart.
+        self::assertTrue($xahau->isValidAccount('r4ERx8577eKBSAT1pLefizNPYCYfhk1op2'));
+        self::assertTrue(ChainCatalog::chain('XRPL')->isValidAccount('r4ERx8577eKBSAT1pLefizNPYCYfhk1op2'));
+        self::assertFalse($xahau->isValidAccount('r4ERx8577eKBSAT1pLefizNPYCYfhk1op3'), 'checksum');
     }
 
     /**
@@ -65,6 +92,20 @@ final class ChainCatalogTest extends TestCase
         foreach (ChainCatalog::chain('STELLAR')->assets as $asset) {
             $quoteCurrency = $asset->pegCurrency ?? 'USD';
             self::assertSame($asset->type, $stellar->quoteForOrder(10.0, $quoteCurrency, $asset->code)->type, $asset->code);
+        }
+
+        $client = new FakeHttpClient();
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"xahau":{"usd":0.01}}'));
+        $client->queueResponse('openapi.bitrue.com', new Response(200, [], '{"symbol":"XAHUSDT","price":"0.01"}'));
+        $xahau = new XrplIntentService(
+            new PriceService($client, new HttpFactory(), new RecordingLogger()),
+            new DestinationTagService(new InMemoryXrplTransactionRepository()),
+            new FakeConfigProvider(),
+            null,
+            'XAHAU',
+        );
+        foreach (ChainCatalog::chain('XAHAU')->assets as $asset) {
+            self::assertSame($asset->type, $xahau->quoteForOrder(10.0, 'USD', $asset->code)->type, $asset->code);
         }
     }
 
@@ -117,7 +158,11 @@ final class ChainCatalogTest extends TestCase
 
         self::assertSame('STELLAR', $chain->chain);
         self::assertSame('EURC', $asset->code);
-        self::assertNull(ChainCatalog::forType('xahau-xah-payment'));
+
+        [$chain, $asset] = ChainCatalog::forType('xahau-xah-payment');
+        self::assertSame('XAHAU', $chain->chain);
+        self::assertSame('XAH', $asset->code);
+        self::assertNull(ChainCatalog::forType('xahau-eurq-payment'));
     }
 
     public function testUnknownChainOrAssetIsRefused(): void
