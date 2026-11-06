@@ -56,6 +56,10 @@ chains holds both roots. Its tables come from `Stellar\Schema`; XLM, USDC and EU
 `Stellar\StablecoinRegistry` (see `INVARIANTS.md`, "Stellar"). The opt-in integration suite has a
 Stellar half too (`--testsuite integration`, live Horizon testnet).
 
+Xahau, which speaks the XRP Ledger's protocol on its own network, needs no root of its own:
+`LedgerDirect::create(..., chain: 'XAHAU')` gives the same services against Xahau's nodes, with the
+tables from `Xrpl\Schema::tables('XAHAU')`. XAH is supported (see `INVARIANTS.md`, "Xahau").
+
 `ChainCatalog` describes what the core can do as data — chains, networks, assets, account formats
 with checksum verification,
 the identifier a customer puts on a payment — so a platform's configuration screen renders one

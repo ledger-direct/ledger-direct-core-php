@@ -35,11 +35,17 @@ final class SyncThrottle
 
     private readonly ClockInterface $clock;
 
+    /**
+     * @param string $chain part of the key for every chain but XRPL, whose keys stay as they were:
+     *     an account can exist on the XRP Ledger and on Xahau, and one chain's sync must not
+     *     hold back the other's
+     */
     public function __construct(
         private readonly CacheInterface $cache,
         private readonly LoggerInterface $logger,
         private readonly int $intervalSeconds = PaymentStatus::MIN_SYNC_INTERVAL_SECONDS,
         ?ClockInterface $clock = null,
+        private readonly string $chain = 'XRPL',
     ) {
         $this->clock = $clock ?? new SystemClock();
     }
@@ -51,7 +57,7 @@ final class SyncThrottle
     public function shouldSync(string $network, string $account): bool
     {
         try {
-            return $this->cache->get(self::key($network, $account)) === null;
+            return $this->cache->get($this->key($network, $account)) === null;
         } catch (Throwable $exception) {
             $this->logger->warning('LedgerDirect: sync throttle read failed, syncing anyway', [
                 'network' => $network,
@@ -71,7 +77,7 @@ final class SyncThrottle
     {
         try {
             $this->cache->set(
-                self::key($network, $account),
+                $this->key($network, $account),
                 $this->clock->now()->getTimestamp(),
                 $this->intervalSeconds,
             );
@@ -101,8 +107,12 @@ final class SyncThrottle
         return true;
     }
 
-    private static function key(string $network, string $account): string
+    private function key(string $network, string $account): string
     {
-        return implode('.', [self::KEY_PREFIX, $network, $account]);
+        $parts = $this->chain === 'XRPL'
+            ? [self::KEY_PREFIX, $network, $account]
+            : [self::KEY_PREFIX, strtolower($this->chain), $network, $account];
+
+        return implode('.', $parts);
     }
 }

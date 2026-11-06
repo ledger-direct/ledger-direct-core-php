@@ -204,6 +204,7 @@ https://xrplf.org//send?to=<account>&dt=<tag>[&amount=<amount>][&currency=<hex>&
   platform whose wallets have not been verified; it is the safe default for an unverified wallet,
   since a wrong unit is a money error.
 - Parameters are RFC 3986-encoded; the order is `to`, `dt`, `amount`, `currency`, `issuer`.
+- On Xahau the request names its network (`network`, last); see "Xahau", Payment request.
 
 `Core\Presentation\AccentColor` sits next to it as the one design rule every payment page
 shares: a merchant's accent colour is used only if it carries white text at WCAG 4.5 : 1;
@@ -405,6 +406,81 @@ testnet issuer, so it could not pass the case catalogue.
 - **Testnet-only assets** for the case catalogue are self-issued (`TESTUSD` in the fixtures); the
   registry never contains them.
 
+## Xahau
+
+Xahau is the third chain. It speaks the XRP Ledger's protocol on its own network — the same
+`account_tx`/`tx` answers, `delivered_amount`, CTID form, r-addresses and destination tags — so it
+gets **no** sibling classes like Stellar. The XRPL classes take the chain as a parameter, and every
+such parameter defaults to `XRPL`, which keeps the XRP Ledger's behaviour as it was:
+`LedgerDirect::create(…, chain: 'XAHAU')`, `Xrpl\XrplClient`, `Payment\PaymentIntentService`,
+`Xrpl\SyncThrottle`, `Xrpl\Schema::tables()`/`mysql()`. The sync, the settlement rule, the tag
+service and `PaymentStatus` are unchanged; a shop that takes both chains holds two roots, each with
+its own repository and its own configuration under the chain's name. Verified on the Xahau testnet
+on 2026-11-06 (fixtures under `tests/Xahau/fixtures/`).
+
+### Names in the record
+
+- `chain` is **`XAHAU`** — not a network of `XRPL`: `base_asset` XAH on `chain: XRPL` would be
+  false, and the native asset follows the chain. `network` is `mainnet` | `testnet`.
+- `type` is `xahau-xah-payment`, `base_asset` `XAH`, `amount_requested` a number as for XRP.
+- No issued assets yet. Euro stablecoins exist on Xahau; none is in a registry.
+
+### Tables
+
+`ledger_direct_xahau_tx` and `ledger_direct_xahau_destination_tag`, with the XRPL tables'
+columns; index names carry `xahau`, since PostgreSQL wants an index name unique per schema. **No
+row and no tag counter is shared with the XRP Ledger**, not even for an account that exists on
+both: the same keys open the same r-address on both chains (Xahau's `Import`), and merchants are
+asked to use one account per chain. The adapter warns — it cannot refuse, the formats are
+identical — when the same receiving account is configured for both.
+
+A payment sent on the other chain never reaches an order: it is in the other chain's table, or in
+none. That is a log case, not a payment state (decided 2026-11-06; revisit if it shows up in
+support).
+
+### Endpoints
+
+Fixed in `XrplClient`: `https://xahau.network/` (mainnet, network id 21337) and
+`https://xahau-test.net/` (testnet, 21338), run by Xahau's foundation; not merchant-configurable,
+like the XRP Ledger's. A node that answers HTTP 429 or 503 raises an `XrplRpcException` with the
+error code `rateLimited` and the `Retry-After` in the message; nothing sleeps inside a shop
+request, and `SyncThrottle` stays mandatory. The mainnet node sits behind rate limits counted in
+units with `RateLimit-*` headers and accepts API keys; a configurable endpoint or a key are the
+documented alternatives if the public node stops serving shops.
+
+The testnet keeps about three weeks of history. A cursor older than that gets `lgrIdxsInvalid`
+like a cursor from before a reset, and the same recovery applies (sync again without a cursor).
+
+### Conversion, oracles
+
+- XAH is quoted to **5** places like XRP, with the same native-asset tolerance.
+- XAH trades on one exchange, Bitrue (XAH/USDT, about 13,500 USDT a day on 2026-11-06).
+  Coingecko (`xahau`) is the price; Bitrue, asked directly, is the plausibility check through the
+  divergence filter (`0.05`): two feeds that disagree by more than that give no price. Both report
+  the same market — the check catches a stale or broken aggregator, **not** a manipulated one.
+  Binance and Kraken do not list XAH; CoinMarketCap needs an API key and reports the same market.
+  Bitrue quotes USDT only and answers USD; an EUR quote rests on Coingecko alone.
+- An on-ledger price oracle for XAH exists on mainnet; its own description says it is the median
+  of Coingecko and Bitrue, so it adds no source.
+
+### Payment request
+
+The XRPL form plus `network=XAHAU` (mainnet) or `network=XAHAUTESTNET` (testnet), last in the
+query. With it Xaman offers the switch when it is set to another network; without it the request
+would be paid on whichever network the wallet is on — and the same r-address may exist there. The
+request without the parameter was paid on Xahau as a `Payment` when Xaman was already on Xahau;
+the parameter was shown to trigger the switch hint. XRPL requests carry no network (PW-04).
+
+### Known gaps
+
+- **`Remit`.** Xahau's multi-amount payment carries no `delivered_amount`; the sync stores it and
+  never counts it. A checkout asks for a payment and wallets send a `Payment`; a `Remit` is built
+  by hand.
+- **Hooks** (logic on the account, e.g. refusing payments without a tag) are not used; a hook on
+  the merchant's account can raise the fee or refuse a payment, which the core does not see.
+- **`AccountDelete`** is not enabled on Xahau (amendment `DeletableAccounts`); nothing in the core
+  needs it.
+
 ## Amount encoding on XRPL
 
 The ledger's wire encoding is **not** the record's shape, and the core owns the translation:
@@ -449,6 +525,7 @@ currency code is still the 40-character USDC representation.
 
 - XRP → Binance + Coingecko + Kraken, divergence filter `0.05`.
 - RLUSD / USDC → Coingecko only.
+- XAH → Coingecko + Bitrue (USD only), divergence filter `0.05`; one market behind both (see "Xahau").
 - Kraken is read **generically** (read the single `result` entry, never key by `XXRPZUSD`).
 - All catches are logged via PSR-3.
 

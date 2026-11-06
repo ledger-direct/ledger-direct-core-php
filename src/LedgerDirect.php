@@ -21,6 +21,7 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Log\LoggerInterface;
+use InvalidArgumentException;
 use Psr\SimpleCache\CacheInterface;
 
 /**
@@ -62,6 +63,7 @@ final class LedgerDirect
         private readonly ClockInterface $clock,
         private readonly string $nativeAssetTolerance,
         private readonly int $rateFreshTtlSeconds,
+        private readonly string $chain,
     ) {
     }
 
@@ -71,6 +73,9 @@ final class LedgerDirect
      * @param ClockInterface|null $clock defaults to the wall clock; inject a frozen one in tests
      * @param string $nativeAssetTolerance see SettlementPolicy
      * @param int $rateFreshTtlSeconds see PriceService
+     * @param string $chain 'XRPL' or 'XAHAU' — the protocol is the same, so one root serves either;
+     *     a shop that takes both holds two roots, each with its own repository (Xahau's tables,
+     *     see Xrpl\Schema) and its own configuration under the chain's name
      */
     public static function create(
         ClientInterface $httpClient,
@@ -83,7 +88,12 @@ final class LedgerDirect
         ?ClockInterface $clock = null,
         string $nativeAssetTolerance = SettlementPolicy::DEFAULT_NATIVE_ASSET_TOLERANCE,
         int $rateFreshTtlSeconds = PriceService::DEFAULT_FRESH_TTL_SECONDS,
+        string $chain = ChainCatalog::XRPL,
     ): self {
+        if (!in_array($chain, [ChainCatalog::XRPL, ChainCatalog::XAHAU], true)) {
+            throw new InvalidArgumentException("LedgerDirect serves XRPL and XAHAU; '{$chain}' has its own root.");
+        }
+
         return new self(
             $httpClient,
             $requestFactory,
@@ -95,7 +105,14 @@ final class LedgerDirect
             $clock ?? new SystemClock(),
             $nativeAssetTolerance,
             $rateFreshTtlSeconds,
+            $chain,
         );
+    }
+
+    /** 'XRPL' or 'XAHAU'. */
+    public function chain(): string
+    {
+        return $this->chain;
     }
 
     public function clock(): ClockInterface
@@ -120,7 +137,7 @@ final class LedgerDirect
 
     public function xrplClient(): XrplClient
     {
-        return $this->xrplClient ??= new XrplClient($this->httpClient, $this->requestFactory, $this->streamFactory);
+        return $this->xrplClient ??= new XrplClient($this->httpClient, $this->requestFactory, $this->streamFactory, $this->chain);
     }
 
     public function priceService(): PriceService
@@ -152,6 +169,7 @@ final class LedgerDirect
             $this->destinationTagService(),
             $this->configProvider,
             $this->clock,
+            $this->chain,
         );
     }
 
@@ -175,6 +193,7 @@ final class LedgerDirect
             $this->logger,
             PaymentStatus::MIN_SYNC_INTERVAL_SECONDS,
             $this->clock,
+            $this->chain,
         );
     }
 

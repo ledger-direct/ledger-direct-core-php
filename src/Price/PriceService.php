@@ -322,6 +322,10 @@ final class PriceService
                 new EurcPriceProvider($this->httpClient, $this->requestFactory, $this->logger),
                 EurcPriceProvider::ROUND_PLACES,
             ],
+            XahPriceProvider::CRYPTO_CODE => [
+                new XahPriceProvider($this->httpClient, $this->requestFactory, $this->logger),
+                XahPriceProvider::ROUND_PLACES,
+            ],
             default => throw new InvalidArgumentException("Unsupported base_asset '{$baseAsset}'."),
         };
     }

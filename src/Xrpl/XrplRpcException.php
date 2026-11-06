@@ -23,7 +23,8 @@ final class XrplRpcException extends RuntimeException implements LedgerDirectExc
      *     failures. Exposed so a caller can react to a *specific*
      *     recoverable condition without matching on message text —
      *     SyncService uses it to recognise a cursor left behind by a
-     *     testnet reset.
+     *     testnet reset. XrplClient::ERROR_RATE_LIMITED marks a node that
+     *     answered HTTP 429 or 503.
      */
     public function __construct(
         string $message,

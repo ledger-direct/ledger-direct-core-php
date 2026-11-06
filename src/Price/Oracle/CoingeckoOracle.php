@@ -18,6 +18,7 @@ final class CoingeckoOracle implements OracleInterface
         'RLUSD' => 'ripple-usd',
         'XLM' => 'stellar',
         'EURC' => 'euro-coin',
+        'XAH' => 'xahau',
     ];
 
     public function __construct(

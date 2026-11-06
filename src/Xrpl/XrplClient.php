@@ -16,6 +16,9 @@ use Psr\Http\Message\StreamFactoryInterface;
  * (`account_tx`, `tx`). Returns raw, undecoded ledger data — hydrating it
  * into domain objects (e.g. XrplTransaction) is a caller's job (SyncService),
  * not this class's.
+ *
+ * Also the transport for Xahau, which speaks the same protocol on its own
+ * nodes: the chain picks the endpoint, nothing else changes.
  */
 final class XrplClient
 {
@@ -27,16 +30,42 @@ final class XrplClient
      */
     public const ERROR_LEDGER_INDEXES_INVALID = 'lgrIdxsInvalid';
 
+    /**
+     * The error code a rate-limited or overloaded node (HTTP 429 or 503) is
+     * reported with. Not retried here: a sync runs inside a shop request and
+     * must not sleep. The node's Retry-After, when it sends one, is in the
+     * message; the next sync after the throttle interval tries again.
+     */
+    public const ERROR_RATE_LIMITED = 'rateLimited';
+
+    /**
+     * Fixed public endpoints per chain and network (INVARIANTS.md, "Xahau",
+     * Endpoints). Xahau's are run by its foundation; a merchant cannot
+     * change them.
+     */
     private const JSON_RPC_URLS = [
-        'mainnet' => 'https://xrplcluster.com/',
-        'testnet' => 'https://s.altnet.rippletest.net:51234/',
+        'XRPL' => [
+            'mainnet' => 'https://xrplcluster.com/',
+            'testnet' => 'https://s.altnet.rippletest.net:51234/',
+        ],
+        'XAHAU' => [
+            'mainnet' => 'https://xahau.network/',
+            'testnet' => 'https://xahau-test.net/',
+        ],
     ];
 
+    /**
+     * @param string $chain 'XRPL' or 'XAHAU' — which nodes to ask
+     */
     public function __construct(
         private readonly ClientInterface $httpClient,
         private readonly RequestFactoryInterface $requestFactory,
         private readonly StreamFactoryInterface $streamFactory,
+        private readonly string $chain = 'XRPL',
     ) {
+        if (!isset(self::JSON_RPC_URLS[$chain])) {
+            throw new InvalidArgumentException("Unsupported chain '{$chain}'.");
+        }
     }
 
     /**
@@ -118,7 +147,7 @@ final class XrplClient
      */
     private function callRpc(string $network, string $method, array $paramsObject): array
     {
-        $url = self::urlForNetwork($network);
+        $url = $this->urlForNetwork($network);
 
         try {
             $body = json_encode([
@@ -145,6 +174,16 @@ final class XrplClient
         }
 
         $status = $response->getStatusCode();
+        if ($status === 429 || $status === 503) {
+            $retryAfter = $response->getHeaderLine('Retry-After');
+
+            throw new XrplRpcException(
+                "XRPL JSON-RPC '{$method}' on {$this->chain} {$network} returned HTTP {$status}"
+                    . ($retryAfter !== '' ? ", retry after {$retryAfter}" : '') . '.',
+                error: self::ERROR_RATE_LIMITED,
+            );
+        }
+
         if ($status < 200 || $status >= 300) {
             throw new XrplRpcException("XRPL JSON-RPC '{$method}' on {$network} returned HTTP {$status}.");
         }
@@ -168,8 +207,8 @@ final class XrplClient
         return $result;
     }
 
-    private static function urlForNetwork(string $network): string
+    private function urlForNetwork(string $network): string
     {
-        return self::JSON_RPC_URLS[$network] ?? throw new InvalidArgumentException("Unsupported network '{$network}'.");
+        return self::JSON_RPC_URLS[$this->chain][$network] ?? throw new InvalidArgumentException("Unsupported network '{$network}'.");
     }
 }

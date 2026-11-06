@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Payment;
 
+use InvalidArgumentException;
+
 /**
  * The payment request the QR code encodes: one code with the receiving
  * account, the destination tag and — once the format is verified — the
@@ -35,6 +37,17 @@ final class PaymentUri
     public const AMOUNT_MODE = self::AMOUNT_DISPLAYED;
 
     /**
+     * Xaman's network keys for a Xahau request. The same r-address is valid on
+     * both chains, so a Xahau request names its network: a customer whose Xaman
+     * is on another network is offered the switch (scan test on the Xahau
+     * testnet, 2026-11-06). An XRPL request carries no network, as verified in PW-04.
+     */
+    public const XAHAU_NETWORK_KEYS = [
+        'mainnet' => 'XAHAU',
+        'testnet' => 'XAHAUTESTNET',
+    ];
+
+    /**
      * @param string $amountDue the amount to send, as the page shows it: the
      *     shortfall while a partial payment is in, the request otherwise
      */
@@ -52,6 +65,11 @@ final class PaymentUri
         if (is_array($intent->amountRequested)) {
             $parameters['currency'] = (string) $intent->amountRequested['currency'];
             $parameters['issuer'] = (string) $intent->amountRequested['issuer'];
+        }
+
+        if ($intent->chain === 'XAHAU') {
+            $parameters['network'] = self::XAHAU_NETWORK_KEYS[$intent->network]
+                ?? throw new InvalidArgumentException("Unsupported network '{$intent->network}'.");
         }
 
         return self::BASE . '?' . http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);

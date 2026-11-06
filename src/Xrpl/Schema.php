@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Xrpl;
 
+use InvalidArgumentException;
+
 /**
  * The two tables the core needs, as data — the "SQL/DDL as a constant or
  * migration template" INVARIANTS.md ("Tables") promises. The core never
@@ -30,6 +32,19 @@ final class Schema
     public const TABLE_DESTINATION_TAG = 'ledger_direct_xrpl_destination_tag';
 
     /**
+     * Xahau keeps the same columns in tables of its own: its own transactions
+     * and its own tag counter, never a row shared with the XRP Ledger, even
+     * for an account that exists on both (INVARIANTS.md, "Xahau", Tables).
+     */
+    public const TABLE_XAHAU_TX = 'ledger_direct_xahau_tx';
+    public const TABLE_XAHAU_DESTINATION_TAG = 'ledger_direct_xahau_destination_tag';
+
+    private const TABLES_BY_CHAIN = [
+        'XRPL' => [self::TABLE_TX, self::TABLE_DESTINATION_TAG],
+        'XAHAU' => [self::TABLE_XAHAU_TX, self::TABLE_XAHAU_DESTINATION_TAG],
+    ];
+
+    /**
      * Names PostgreSQL gives every table implicitly; a user column cannot
      * have them. Kept here so the rule is checked, not remembered — every
      * chain's schema is tested against it.
@@ -43,10 +58,16 @@ final class Schema
      *     unique: array<string, list<string>>,
      *     indexes: array<string, list<string>>,
      * }>
+     * @param string $chain 'XRPL' (the default, unchanged since 0.9) or 'XAHAU'. Xahau's index
+     *     names carry the chain: PostgreSQL wants an index name unique in the schema, not
+     *     only in its table.
      */
-    public static function tables(): array
+    public static function tables(string $chain = 'XRPL'): array
     {
-        return [
+        [$txTable, $tagTable] = self::TABLES_BY_CHAIN[$chain]
+            ?? throw new InvalidArgumentException("Unsupported chain '{$chain}'.");
+
+        $tables = [
             self::TABLE_TX => [
                 'columns' => [
                     ['name' => 'id', 'type' => 'int', 'unsigned' => true, 'nullable' => false, 'autoincrement' => true],
@@ -91,19 +112,37 @@ final class Schema
                 'indexes' => [],
             ],
         ];
+
+        if ($chain === 'XRPL') {
+            return $tables;
+        }
+
+        $rename = static fn (array $named): array => array_combine(
+            array_map(static fn (string $name): string => str_replace('ledger_direct_', 'ledger_direct_xahau_', $name), array_keys($named)),
+            array_values($named),
+        );
+
+        $tx = $tables[self::TABLE_TX];
+        $tx['unique'] = $rename($tx['unique']);
+        $tx['indexes'] = $rename($tx['indexes']);
+
+        return [
+            $txTable => $tx,
+            $tagTable => $tables[self::TABLE_DESTINATION_TAG],
+        ];
     }
 
     /**
      * One `CREATE TABLE IF NOT EXISTS` per table, in tables() order, with
-     * $prefix in front of every table name (e.g. `ps_`, `wp_`).
+     * $prefix in front of every table name (e.g. `ps_`, `wp_`), for the given chain's tables.
      *
      * @return list<string>
      */
-    public static function mysql(string $prefix = '', string $engine = 'InnoDB', string $charset = 'utf8mb4'): array
+    public static function mysql(string $prefix = '', string $engine = 'InnoDB', string $charset = 'utf8mb4', string $chain = 'XRPL'): array
     {
         $statements = [];
 
-        foreach (self::tables() as $table => $definition) {
+        foreach (self::tables($chain) as $table => $definition) {
             $lines = [];
 
             foreach ($definition['columns'] as $column) {
