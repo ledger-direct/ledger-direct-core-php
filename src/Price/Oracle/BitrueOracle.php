@@ -26,6 +26,10 @@ final class BitrueOracle implements OracleInterface
     ) {
     }
 
+    /**
+     * The last price of `<base>USDT`, as USD. 0.0 — "no price on this feed" —
+     * for any quote currency but USD and for a symbol Bitrue does not list.
+     */
     public function getCurrentPriceForPair(string $baseCode, string $quoteCode): float
     {
         if (strtoupper($quoteCode) !== 'USD') {

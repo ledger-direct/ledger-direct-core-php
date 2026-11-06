@@ -255,6 +255,12 @@ final class PriceService
             return null;
         }
 
+        // An amount is the total divided by the rate. This service only ever writes a
+        // positive, finite one; anything else under the key is not a rate.
+        if (!is_finite((float) $rate) || $rate <= 0) {
+            return null;
+        }
+
         return ['rate' => (float) $rate, 'fetched_at' => $entry['fetched_at']];
     }
 
