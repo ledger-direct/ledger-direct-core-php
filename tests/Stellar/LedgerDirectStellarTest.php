@@ -46,7 +46,8 @@ final class LedgerDirectStellarTest extends TestCase
         $client->queueResponse('/payments', StellarFixtures::response('horizon/merchant-payments-joined.json'));
         $clock = new FrozenClock(1_700_000_000);
         $repository = new InMemoryStellarPaymentRepository();
-        $core = $this->create(client: $client, repository: $repository, cache: new InMemoryCache($clock), clock: $clock);
+        $cache = new InMemoryCache($clock);
+        $core = $this->create(client: $client, repository: $repository, cache: $cache, clock: $clock);
 
         // The quote: 0.88 USD at 0.40 USD/XLM is the 2.2 XLM the fixtures paid on memo 123456.
         $quoted = $core->paymentIntentService()->quoteForOrder(0.88, 'USD', 'XLM');
@@ -58,6 +59,10 @@ final class LedgerDirectStellarTest extends TestCase
         // The status endpoint: sync once per interval, then judge.
         self::assertTrue($core->syncThrottle()->syncIfDue($core->syncService(), StellarFixtures::MERCHANT, 'testnet'));
         self::assertFalse($core->syncThrottle()->syncIfDue($core->syncService(), StellarFixtures::MERCHANT, 'testnet'), 'throttled');
+        $marks = array_values(array_filter($cache->keys(), static fn (string $k): bool => str_starts_with($k, 'ledger-direct.sync.')));
+        self::assertCount(1, $marks);
+        self::assertStringStartsWith('ledger-direct.sync.v2.stellar.testnet.', $marks[0], 'the throttle mark names its chain');
+        self::assertLessThanOrEqual(64, strlen($marks[0]), 'PSR-16 guarantees 64 characters');
 
         $fulfilled = $core->syncService()->findFulfillmentFor($intent)?->applyTo($intent);
         $status = $core->paymentStatus($fulfilled);

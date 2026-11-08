@@ -291,6 +291,39 @@ final class PriceServiceTest extends TestCase
     }
 
     /**
+     * A rate nothing can be divided by is no rate. This service never writes
+     * one — an oracle price counts only above zero — so it can only be a foreign
+     * or damaged entry, and it reads as a miss like any other unusable one
+     * instead of failing the quote with a division by zero.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('unusableRates')]
+    public function testACachedRateThatIsNotAPositiveNumberIsTreatedAsAMiss(mixed $rate): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"ripple-usd":{"eur":0.919}}'));
+        $cache = new InMemoryCache();
+        $cache->set(self::RLUSD_EUR_KEY, ['rate' => $rate, 'fetched_at' => time()]);
+        $service = new PriceService($client, new HttpFactory(), new RecordingLogger(), $cache);
+
+        $quote = $service->getCryptoPriceForOrder(91.9, 'EUR', 'RLUSD', 'mainnet');
+
+        self::assertEqualsWithDelta(0.919, $quote->exchangeRate, 0.0001);
+        self::assertSame('100.00', $quote->amountRequested['value']);
+    }
+
+    /** @return array<string, array{0: mixed}> */
+    public static function unusableRates(): array
+    {
+        return [
+            'zero' => [0.0],
+            'integer zero' => [0],
+            'negative' => [-0.5],
+            'infinite' => [INF],
+            'not a number' => [NAN],
+        ];
+    }
+
+    /**
      * A backend that round-trips the entry through JSON hands a whole-number
      * rate back as int — which must still count as a hit, not a permanent
      * miss for every pairing that happens to sit on a round number.

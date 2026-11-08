@@ -30,16 +30,27 @@ use Throwable;
  */
 final class SyncThrottle
 {
-    /** Same rule as the rate cache: the network must be in the key, dots are PSR-16-legal. */
-    private const KEY_PREFIX = 'ledger-direct.sync.v1';
+    /**
+     * Chain and network are in the key, as in the rate cache's; the account is
+     * in it as a digest. PSR-16 guarantees keys of 64 characters, no more, and
+     * a 34-character r-address or a 56-character Stellar key spelled out does
+     * not fit next to the prefix. A key a backend rejects fails open: every
+     * poll would sync. Dots are PSR-16-legal.
+     */
+    private const KEY_PREFIX = 'ledger-direct.sync.v2';
 
     private readonly ClockInterface $clock;
 
+    /**
+     * @param string $chain part of the key: the same account can exist on the XRP Ledger and on
+     *     Xahau, and one chain's sync must not hold back the other's
+     */
     public function __construct(
         private readonly CacheInterface $cache,
         private readonly LoggerInterface $logger,
         private readonly int $intervalSeconds = PaymentStatus::MIN_SYNC_INTERVAL_SECONDS,
         ?ClockInterface $clock = null,
+        private readonly string $chain = 'XRPL',
     ) {
         $this->clock = $clock ?? new SystemClock();
     }
@@ -51,7 +62,7 @@ final class SyncThrottle
     public function shouldSync(string $network, string $account): bool
     {
         try {
-            return $this->cache->get(self::key($network, $account)) === null;
+            return $this->cache->get($this->key($network, $account)) === null;
         } catch (Throwable $exception) {
             $this->logger->warning('LedgerDirect: sync throttle read failed, syncing anyway', [
                 'network' => $network,
@@ -71,7 +82,7 @@ final class SyncThrottle
     {
         try {
             $this->cache->set(
-                self::key($network, $account),
+                $this->key($network, $account),
                 $this->clock->now()->getTimestamp(),
                 $this->intervalSeconds,
             );
@@ -101,8 +112,8 @@ final class SyncThrottle
         return true;
     }
 
-    private static function key(string $network, string $account): string
+    private function key(string $network, string $account): string
     {
-        return implode('.', [self::KEY_PREFIX, $network, $account]);
+        return implode('.', [self::KEY_PREFIX, strtolower($this->chain), $network, substr(hash('sha256', $account), 0, 16)]);
     }
 }

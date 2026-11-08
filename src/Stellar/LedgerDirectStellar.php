@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Stellar;
 
+use Hardcastle\LedgerDirect\Core\ChainCatalog;
 use Hardcastle\LedgerDirect\Core\Clock\SystemClock;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentStatus;
@@ -153,6 +154,7 @@ final class LedgerDirectStellar
             $this->logger,
             PaymentStatus::MIN_SYNC_INTERVAL_SECONDS,
             $this->clock,
+            ChainCatalog::STELLAR,
         );
     }
 

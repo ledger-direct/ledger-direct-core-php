@@ -27,6 +27,10 @@ final class ChainCatalog
 {
     public const XRPL = 'XRPL';
     public const STELLAR = 'STELLAR';
+    public const XAHAU = 'XAHAU';
+
+    /** The classic address of the XRP Ledger and of Xahau. Ripple's base58 alphabet omits 0, O, I and l. */
+    private const XRPL_ACCOUNT_PATTERN = '/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/D';
 
     /** @var list<ChainDescriptor>|null */
     private static ?array $chains = null;
@@ -34,7 +38,7 @@ final class ChainCatalog
     /** @return list<ChainDescriptor> in the order an adapter should show them */
     public static function chains(): array
     {
-        return self::$chains ??= [self::xrpl(), self::stellar()];
+        return self::$chains ??= [self::xrpl(), self::stellar(), self::xahau()];
     }
 
     public static function has(string $chain): bool
@@ -83,8 +87,7 @@ final class ChainCatalog
             nativeAsset: 'XRP',
             networks: ['mainnet', 'testnet'],
             identifierLabel: 'Destination tag',
-            // Ripple's base58 alphabet omits 0, O, I and l.
-            accountPattern: '/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/D',
+            accountPattern: self::XRPL_ACCOUNT_PATTERN,
             accountEncoding: AccountEncoding::XrplClassicAddress,
             assets: [
                 new AssetDescriptor('XRP', 'XRP', native: true, displayDecimals: 5, type: 'xrp-payment', pegCurrency: null, issuers: []),
@@ -123,6 +126,27 @@ final class ChainCatalog
                     'mainnet' => $registry->issuer(StellarRegistry::EURC, 'mainnet'),
                     'testnet' => $registry->issuer(StellarRegistry::EURC, 'testnet'),
                 ]),
+            ],
+        );
+    }
+
+    /**
+     * Xahau speaks the XRP Ledger protocol on its own network: the same
+     * r-addresses, destination tags and amount encoding, its own native
+     * asset. Issued assets are not offered yet (INVARIANTS.md, "Xahau").
+     */
+    private static function xahau(): ChainDescriptor
+    {
+        return new ChainDescriptor(
+            chain: self::XAHAU,
+            label: 'Xahau',
+            nativeAsset: 'XAH',
+            networks: ['mainnet', 'testnet'],
+            identifierLabel: 'Destination tag',
+            accountPattern: self::XRPL_ACCOUNT_PATTERN,
+            accountEncoding: AccountEncoding::XrplClassicAddress,
+            assets: [
+                new AssetDescriptor('XAH', 'XAH', native: true, displayDecimals: 5, type: 'xahau-xah-payment', pegCurrency: null, issuers: []),
             ],
         );
     }
