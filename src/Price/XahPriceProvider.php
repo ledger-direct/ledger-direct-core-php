@@ -9,10 +9,11 @@ use Hardcastle\LedgerDirect\Core\Price\Oracle\CoingeckoOracle;
 
 /**
  * XAH, Xahau's native asset: five decimal places like XRP. Binance and
- * Kraken do not list it. Coingecko is the price; Bitrue, the one market
- * XAH trades on, is the plausibility check through the divergence filter —
- * it catches a stale or broken aggregator, not a manipulated market, and
- * answers USD only (INVARIANTS.md, "Xahau").
+ * Kraken do not list it. Coingecko and Bitrue — the one market XAH trades
+ * on — are read like every oracle set: averaged when they agree, no price
+ * when two feeds disagree. Two feeds of one market catch a stale or broken
+ * aggregator, not a manipulated market. Bitrue answers USD only
+ * (INVARIANTS.md, "Xahau").
  */
 final class XahPriceProvider extends AbstractPriceProvider
 {

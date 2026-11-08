@@ -454,12 +454,14 @@ like a cursor from before a reset, and the same recovery applies (sync again wit
 ### Conversion, oracles
 
 - XAH is quoted to **5** places like XRP, with the same native-asset tolerance.
-- XAH trades on one exchange, Bitrue (XAH/USDT, about 13,500 USDT a day on 2026-11-06).
-  Coingecko (`xahau`) is the price; Bitrue, asked directly, is the plausibility check through the
-  divergence filter (`0.05`): two feeds that disagree by more than that give no price. Both report
-  the same market — the check catches a stale or broken aggregator, **not** a manipulated one.
-  Binance and Kraken do not list XAH; CoinMarketCap needs an API key and reports the same market.
-  Bitrue quotes USDT only and answers USD; an EUR quote rests on Coingecko alone.
+- XAH trades on one exchange, Bitrue (XAH/USDT, about 13,500 USDT a day on 2026-11-06). The
+  oracle set is Coingecko (`xahau`) and Bitrue, asked directly, read like every other set: the
+  prices that pass the divergence filter (`0.05` off their mean) are averaged. With two feeds that
+  means both are averaged while they are within about ten percent of each other, and a wider
+  disagreement leaves no price — there is no third feed to decide. Both report the same market:
+  the set catches a stale or broken aggregator, **not** a manipulated one. Binance and Kraken do
+  not list XAH; CoinMarketCap needs an API key and reports the same market. Bitrue quotes USDT
+  only and answers USD; an EUR quote rests on Coingecko alone.
 - An on-ledger price oracle for XAH exists on mainnet; its own description says it is the median
   of Coingecko and Bitrue, so it adds no source.
 
@@ -525,7 +527,7 @@ currency code is still the 40-character USDC representation.
 
 - XRP → Binance + Coingecko + Kraken, divergence filter `0.05`.
 - RLUSD / USDC → Coingecko only.
-- XAH → Coingecko + Bitrue (USD only), divergence filter `0.05`; one market behind both (see "Xahau").
+- XAH → Coingecko + Bitrue (USD only), averaged through the same filter; one market behind both (see "Xahau").
 - Kraken is read **generically** (read the single `result` entry, never key by `XXRPZUSD`).
 - All catches are logged via PSR-3.
 

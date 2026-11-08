@@ -169,6 +169,27 @@ final class XahauWiringTest extends TestCase
 
         self::assertFalse($xrpl->shouldSync('testnet', self::MERCHANT));
         self::assertTrue($xahau->shouldSync('testnet', self::MERCHANT));
+
+        // PSR-16 guarantees keys of 64 characters; an account spelled out would not fit.
+        foreach ($cache->keys() as $key) {
+            self::assertLessThanOrEqual(64, strlen($key), $key);
+            self::assertDoesNotMatchRegularExpression('/[{}()\/\\@:]/', $key, 'no character PSR-16 reserves');
+        }
+    }
+
+    public function testTheClientLooksATransactionUpByCtidWithTheCtidParameter(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('xahau-test.net', new Response(200, [], '{"result":{"status":"success","hash":"ABC","validated":true}}'));
+        $client->queueResponse('xahau-test.net', new Response(200, [], '{"result":{"status":"success","hash":"ABC","validated":true}}'));
+        $xahau = new XrplClient($client, new HttpFactory(), new HttpFactory(), 'XAHAU');
+
+        $xahau->tx('C0D316CA0004535A', 'testnet');
+        $xahau->tx(str_repeat('A', 64), 'testnet');
+
+        [$byCtid, $byHash] = array_map(static fn ($r): array => json_decode((string) $r->getBody(), true)['params'][0], $client->sentRequests());
+        self::assertSame(['ctid' => 'C0D316CA0004535A', 'binary' => false], $byCtid, 'the node reads a CTID in `transaction` as a malformed hash');
+        self::assertSame(['transaction' => str_repeat('A', 64), 'binary' => false], $byHash);
     }
 
     public function testTheRequestNamesTheXahauNetworkForXaman(): void

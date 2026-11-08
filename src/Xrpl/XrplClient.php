@@ -107,8 +107,12 @@ final class XrplClient
      */
     public function tx(string $transactionHashOrCtid, string $network): ?array
     {
+        // A CTID has its own parameter; in `transaction` a node reads it as a malformed
+        // hash and answers notImpl — rippled and Xahau alike.
+        $parameter = XrplTransaction::isValidCtid($transactionHashOrCtid) ? 'ctid' : 'transaction';
+
         $result = $this->callRpc($network, 'tx', [
-            'transaction' => $transactionHashOrCtid,
+            $parameter => $transactionHashOrCtid,
             'binary' => false,
         ]);
 

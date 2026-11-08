@@ -30,8 +30,14 @@ use Throwable;
  */
 final class SyncThrottle
 {
-    /** Same rule as the rate cache: chain and network must be in the key, dots are PSR-16-legal. */
-    private const KEY_PREFIX = 'ledger-direct.sync.v1';
+    /**
+     * Chain and network are in the key, as in the rate cache's; the account is
+     * in it as a digest. PSR-16 guarantees keys of 64 characters, no more, and
+     * a 34-character r-address or a 56-character Stellar key spelled out does
+     * not fit next to the prefix. A key a backend rejects fails open: every
+     * poll would sync. Dots are PSR-16-legal.
+     */
+    private const KEY_PREFIX = 'ledger-direct.sync.v2';
 
     private readonly ClockInterface $clock;
 
@@ -108,6 +114,6 @@ final class SyncThrottle
 
     private function key(string $network, string $account): string
     {
-        return implode('.', [self::KEY_PREFIX, strtolower($this->chain), $network, $account]);
+        return implode('.', [self::KEY_PREFIX, strtolower($this->chain), $network, substr(hash('sha256', $account), 0, 16)]);
     }
 }

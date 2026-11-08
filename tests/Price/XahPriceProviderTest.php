@@ -14,8 +14,9 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * XAH trades on one market, Bitrue. Coingecko reports it; Bitrue is asked
- * directly as the plausibility check. Two feeds of one market: the filter
- * catches a stale or broken aggregator, not a manipulated market.
+ * directly. Two feeds of one market, read like every oracle set: averaged
+ * while they agree, no price when they do not — which with two feeds means
+ * a spread of about ten percent, since each is measured against their mean.
  */
 final class XahPriceProviderTest extends TestCase
 {
@@ -33,6 +34,16 @@ final class XahPriceProviderTest extends TestCase
         self::assertStringContainsString('ids=xahau&vs_currencies=usd', $urls[0]);
         self::assertStringContainsString('ticker/price?symbol=XAHUSDT', $urls[1]);
         self::assertCount(2, $urls, 'no Binance, no Kraken: neither lists XAH');
+    }
+
+    public function testTwoFeedsSixPercentApartAreStillAveraged(): void
+    {
+        $client = new FakeHttpClient();
+        // 0.0100 against 0.0106: each sits under 3 % off their mean of 0.0103, so both pass.
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"xahau":{"usd":0.0100}}'));
+        $client->queueResponse('openapi.bitrue.com', new Response(200, [], '{"symbol":"XAHUSDT","price":"0.0106"}'));
+
+        self::assertEqualsWithDelta(0.0103, (new XahPriceProvider($client, new HttpFactory(), new RecordingLogger()))->getCurrentExchangeRate('USD'), 1e-9);
     }
 
     public function testTwoFeedsThatDisagreeGiveNoPrice(): void

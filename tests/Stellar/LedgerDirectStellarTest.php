@@ -59,7 +59,10 @@ final class LedgerDirectStellarTest extends TestCase
         // The status endpoint: sync once per interval, then judge.
         self::assertTrue($core->syncThrottle()->syncIfDue($core->syncService(), StellarFixtures::MERCHANT, 'testnet'));
         self::assertFalse($core->syncThrottle()->syncIfDue($core->syncService(), StellarFixtures::MERCHANT, 'testnet'), 'throttled');
-        self::assertContains('ledger-direct.sync.v1.stellar.testnet.' . StellarFixtures::MERCHANT, $cache->keys(), 'the throttle mark names its chain');
+        $marks = array_values(array_filter($cache->keys(), static fn (string $k): bool => str_starts_with($k, 'ledger-direct.sync.')));
+        self::assertCount(1, $marks);
+        self::assertStringStartsWith('ledger-direct.sync.v2.stellar.testnet.', $marks[0], 'the throttle mark names its chain');
+        self::assertLessThanOrEqual(64, strlen($marks[0]), 'PSR-16 guarantees 64 characters');
 
         $fulfilled = $core->syncService()->findFulfillmentFor($intent)?->applyTo($intent);
         $status = $core->paymentStatus($fulfilled);
