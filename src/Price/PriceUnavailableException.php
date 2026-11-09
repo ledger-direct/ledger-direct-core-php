@@ -13,6 +13,6 @@ use RuntimeException;
  * distinct from a programming error so callers can catch it specifically
  * (e.g. to show "try again shortly" rather than a hard failure).
  */
-final class PriceUnavailableException extends RuntimeException implements LedgerDirectException
+class PriceUnavailableException extends RuntimeException implements LedgerDirectException
 {
 }

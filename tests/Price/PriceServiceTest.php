@@ -6,6 +6,7 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Price;
 
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
+use Hardcastle\LedgerDirect\Core\Price\OraclesDisagreeException;
 use Hardcastle\LedgerDirect\Core\Price\PriceService;
 use Hardcastle\LedgerDirect\Core\Price\PriceUnavailableException;
 use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
@@ -201,6 +202,26 @@ final class PriceServiceTest extends TestCase
         self::assertStringContainsString('stale exchange rate', $stale['message']);
         self::assertSame(120, $stale['context']['age_seconds']);
         self::assertSame('RLUSD/EUR', $stale['context']['pairing']);
+    }
+
+    public function testAStaleRateIsNotServedWhenTheOraclesAnswerAndDisagree(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"xahau":{"usd":0.0100}}'));
+        $client->queueResponse('openapi.bitrue.com', new Response(200, [], '{"symbol":"XAHUSDT","price":"0.0100"}'));
+        $cache = new InMemoryCache();
+        $service = new PriceService($client, new HttpFactory(), new RecordingLogger(), $cache);
+
+        $service->getCryptoPriceForOrder(1.0, 'USD', 'XAH', 'testnet');
+        $cache->ageEntry('ledger-direct.rate.v1.testnet.XAH.USD', 120); // stale, but inside the 300s horizon
+
+        // Both feeds answer, 20 % apart: the price is in doubt, not out of reach.
+        $client->queueResponse('api.coingecko.com', new Response(200, [], '{"xahau":{"usd":0.0100}}'));
+        $client->queueResponse('openapi.bitrue.com', new Response(200, [], '{"symbol":"XAHUSDT","price":"0.0120"}'));
+
+        $this->expectException(OraclesDisagreeException::class);
+
+        $service->getCryptoPriceForOrder(1.0, 'USD', 'XAH', 'testnet');
     }
 
     public function testAnEntryBeyondTheStaleHorizonIsNotServed(): void

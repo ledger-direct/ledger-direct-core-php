@@ -19,6 +19,8 @@ use Throwable;
  */
 abstract class AbstractPriceProvider implements PriceProviderInterface
 {
+    private bool $oraclesDisagreed = false;
+
     public function __construct(
         protected readonly ClientInterface $httpClient,
         protected readonly RequestFactoryInterface $requestFactory,
@@ -28,6 +30,7 @@ abstract class AbstractPriceProvider implements PriceProviderInterface
 
     public function getCurrentExchangeRate(string $quoteCurrency, bool $round = false): float|false
     {
+        $this->oraclesDisagreed = false;
         $prices = [];
 
         foreach ($this->oracles() as $oracle) {
@@ -48,12 +51,23 @@ abstract class AbstractPriceProvider implements PriceProviderInterface
 
         $filtered = self::filterDivergent($prices);
         if ($filtered === null) {
+            $this->oraclesDisagreed = $prices !== [];
+
             return false;
         }
 
         $average = array_sum($filtered) / count($filtered);
 
         return $round ? round($average, $this->roundPlaces()) : $average;
+    }
+
+    /**
+     * Whether the last getCurrentExchangeRate() came back false because
+     * oracles answered and every price was rejected, not because none answered.
+     */
+    public function oraclesDisagreed(): bool
+    {
+        return $this->oraclesDisagreed;
     }
 
     abstract protected function cryptoCode(): string;

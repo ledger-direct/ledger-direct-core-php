@@ -78,6 +78,18 @@ final class AccountInspectorTest extends TestCase
         self::assertFalse($test->canFreezeOrClawBack());
     }
 
+    public function testTheCacheKeyStaysWithinPsr16(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('/accounts/' . StellarFixtures::MERCHANT, new Response(404, [], '{"status":404}'));
+        $cache = new InMemoryCache(new FrozenClock());
+
+        $this->inspector($client, $cache)->accountExists(StellarFixtures::MERCHANT, 'testnet');
+
+        self::assertCount(1, $cache->keys());
+        self::assertLessThanOrEqual(64, strlen($cache->keys()[0]), 'PSR-16 guarantees 64 characters');
+    }
+
     public function testABrokenCacheIsLoggedAndBypassed(): void
     {
         $client = new FakeHttpClient();

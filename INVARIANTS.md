@@ -223,7 +223,8 @@ the bytes land is the platform's business, as with `XrplTransactionRepositoryInt
 - Two tiers, both derived from `freshTtlSeconds` (default **60 s**, constructor argument):
   - **Fresh** (age ≤ TTL): served without an oracle call.
   - **Stale-while-error** (TTL < age ≤ TTL × 5): served *only* when every oracle just failed, with
-    a PSR-3 warning. Beyond that horizon, `PriceUnavailableException` as before. This is the point
+    a PSR-3 warning. Oracles that answer and are all rejected by the divergence filter have not
+    failed: the prices are in doubt, so no stale rate stands in. Beyond that horizon, `PriceUnavailableException` as before. This is the point
     of the feature: a single oracle hiccup must not make the payment method vanish mid-checkout.
 - A quote may therefore rest on a rate up to `freshTtl` old — and up to `freshTtl × 5` during an
   oracle outage.

@@ -98,7 +98,8 @@ final class AccountInspector
      */
     private function accountRecord(string $account, string $network): ?array
     {
-        $key = implode('.', [self::CACHE_KEY_PREFIX, $network, $account]);
+        // PSR-16 guarantees keys of 64 characters; a 56-character account spelled out does not fit.
+        $key = implode('.', [self::CACHE_KEY_PREFIX, $network, substr(hash('sha256', $account), 0, 16)]);
 
         $cached = $this->cacheGet($key);
         if (is_array($cached)) {

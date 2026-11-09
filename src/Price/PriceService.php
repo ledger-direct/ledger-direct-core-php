@@ -157,7 +157,8 @@ final class PriceService
      * Two tiers: a fresh entry (younger than $freshTtlSeconds) is served
      * outright, no oracle call. Beyond that the oracles are asked again —
      * and only if *they* fail does a stale entry get served, up to the
-     * stale horizon. That middle tier is the real point of caching here:
+     * stale horizon. Oracles that answer and disagree have not failed in
+     * that sense: the prices are in doubt, so there is no rate. That middle tier is the real point of caching here:
      * without it a single oracle hiccup makes the payment method vanish
      * mid-checkout; with it, the rate is merely a minute old.
      *
@@ -185,6 +186,8 @@ final class PriceService
 
         try {
             $rate = $this->fetchRate($provider, $baseAsset, $quoteCurrency);
+        } catch (OraclesDisagreeException $exception) {
+            throw $exception;
         } catch (PriceUnavailableException $exception) {
             if ($entry !== null && $now - $entry['fetched_at'] <= $this->staleHorizonSeconds()) {
                 $this->logger->warning('LedgerDirect: serving a stale exchange rate; no oracle was reachable', [
@@ -210,9 +213,11 @@ final class PriceService
         $exchangeRate = $provider->getCurrentExchangeRate($quoteCurrency);
 
         if ($exchangeRate === false) {
-            throw new PriceUnavailableException(
-                "No usable price for {$baseAsset}/{$quoteCurrency}: all oracles failed or diverged."
-            );
+            $pairing = "{$baseAsset}/{$quoteCurrency}";
+
+            throw $provider->oraclesDisagreed()
+                ? new OraclesDisagreeException("No usable price for {$pairing}: the oracles disagree.")
+                : new PriceUnavailableException("No usable price for {$pairing}: all oracles failed.");
         }
 
         return $exchangeRate;
