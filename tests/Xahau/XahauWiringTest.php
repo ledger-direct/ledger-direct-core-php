@@ -173,7 +173,7 @@ final class XahauWiringTest extends TestCase
         // PSR-16 guarantees keys of 64 characters; an account spelled out would not fit.
         foreach ($cache->keys() as $key) {
             self::assertLessThanOrEqual(64, strlen($key), $key);
-            self::assertDoesNotMatchRegularExpression('/[{}()\/\\@:]/', $key, 'no character PSR-16 reserves');
+            self::assertDoesNotMatchRegularExpression('/[{}()\/\\\\@:]/', $key, 'no character PSR-16 reserves');
         }
     }
 
