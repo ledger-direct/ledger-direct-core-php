@@ -40,7 +40,7 @@ deterministic and gate-worthy; it waits on the core (`Handover-E2E-Teststrategie
 
 | Repository | Unit | Integration | CI gate | Nightly E2E | Manual cases |
 |---|---|---|---|---|---|
-| `ledger-direct-core-php` 0.11.0 | 340 (57 of them Stellar, 24 Xahau) | opt-in (oracles, Horizon testnet) | PHP 8.2–8.4, lowest deps | — | — |
+| `ledger-direct-core-php` 0.11.0 | 349 (57 of them Stellar, 24 Xahau) | opt-in (oracles, Horizon testnet) | PHP 8.2–8.4, lowest deps | — | — |
 | `ledger-direct-payment-ui` 0.1.1 | 7 (Node) | fixture page | tests, build, `dist` committed | — | fixture in a browser |
 | `ledger-direct-shopware6` 1.4.4 | 112 | 10 (dockware 6.7) | shopware-cli validate, PHPUnit | **yes** (`e2e.yml`, dockware) | PS-01…11, PW-01…04 proven on 1.4.0 |
 | `ledger-direct-prestashop` 0.5.1 | 47 | 52 (Flashlight 9.0) | syntax 8.2–8.4, CS, PHPStan 9.0/9.1, PHPUnit, release zip | **yes** (`e2e.yml`, Flashlight) | PS-01…11; PW-04 proven |
@@ -81,6 +81,7 @@ proof that the parameter defaults to the XRP Ledger. No plugin and no harness ch
 | Stellar settlement: the sum rule and the asset-class rule are the XRPL ones (XLM on a USDC quote is `wrong_asset`, never skipped) | core unit (`Stellar\SyncServiceTest`, cross-class cases mirroring `Xrpl\SyncServiceTest`); PS-04 in the harness once a plugin carries Stellar |
 | Xahau: the XRPL sync, settlement and tag rules on Xahau's answers; own tables; XAH quote from Coingecko checked against Bitrue; the request names the network for Xaman; a `Remit` never counts | core unit (`Xahau\XahauSyncTest` against recorded testnet answers, `Xahau\XahauWiringTest`, `Price\XahPriceProviderTest`); Xaman scan on the Xahau testnet (2026-11-06); harness `--chain XAHAU` once a plugin carries Xahau |
 | Stellar registry: issuers never typed, confirmed against Horizon; trust line and issuer flags before a quote | core unit against the checked-in Circle excerpt and Horizon answers; opt-in integration against the live testnet |
+| XRPL testnet reset: one failing request per account and reset, later syncs continue from the ledger the resync reached; without a cache as before | core unit (`Xrpl\SyncServiceTest`, `LedgerDirectTest`) |
 | Testnet reset detection from the cursor's ledger bits | core unit (`Stellar\SyncServiceTest`, cursor from the future); harness detects the reset on its side |
 
 ## Known gaps
@@ -91,8 +92,10 @@ proof that the parameter defaults to the XRP Ledger. No plugin and no harness ch
 - **Browser wallets are manual** (PW-01, PW-02): no test drives a wallet extension.
 - **The SEP-7 request behind the Stellar QR code is unverified by a wallet scan.** `Stellar\PaymentUri` is
   pinned by unit tests only; the first adapter proves it the way PW-04 did for XRPL, with `qr-lab` as the tool.
-- **The testnet is not persistent.** A reset deletes every account; the harness detects it and asks
-  for a new treasury.
+- **The testnet is not persistent.** A reset deletes every account. On the XRP Ledger testnet
+  `ld-e2e wallet ensure` has the faucet recreate the **same** address and sets its trust lines again, so
+  no secret changes. RLUSD and USDC have to come in by hand from the issuers' faucets: the testnet DEX
+  had no seller for USDC on 2026-11-09, and a reset empties it.
 - **The Xaman scan (PW-04) is proven on all four platforms** (Shopware 1.4.0, Magento 1.1.0, PrestaShop
   0.5.0 and WooCommerce 1.3.0, XRP and RLUSD each): one `PaymentUri` in the core, every page scanned once.
   PW-01…PW-03 (browser wallets, network hint, phone layout) are proven on Shopware only.
