@@ -596,8 +596,23 @@ exist — rippled answers `lgrIdxsInvalid` on every sync, for every order, indef
 **The core must survive that without anyone touching the database.** On `lgrIdxsInvalid`, and only
 when a cursor was actually sent, `SyncService` logs a PSR-3 warning and repeats the sync once with
 no `ledger_index_min` at all; `findExistingHashes()` keeps that from duplicating anything. Without
-a cursor the same error means something else and is not retried. Testnet rows surviving a reset are
-worthless but harmless — they are not deleted, just out-ranked by the resync.
+a cursor the same error means something else and is not retried.
+
+Testnet rows surviving a reset are kept, because they prove paid orders, and they are **not**
+out-ranked by the resync: the cursor is the highest stored ledger index, and the new epoch's rows
+sit below the old ones until the new epoch passes them, which takes about as long as the last
+epoch lasted. A ledger number alone cannot tell the epochs apart, so the cursor is not derived
+from rows "below the live ledger" either; old rows are spread over the range the new epoch is
+going through, and a cursor on one of them would skip every payment below it.
+
+With a PSR-16 cache `SyncService` remembers the reset instead: after the resync it stores, under
+`ledger_direct.cursor.v1` with chain, network and an account digest, the stale cursor and the
+highest ledger index the resync fetched. While the repository still reports that stale cursor,
+the sync continues from the remembered ledger and moves it up; the warning and the failing request
+happen once per account and reset. A repository that reports any other cursor makes the note
+irrelevant, which also covers a node that trimmed history below the cursor. No cache, an evicted
+note or a broken cache mean the behaviour before: a failing request, a warning and a full resync
+on every sync — never no sync.
 
 ## Security
 

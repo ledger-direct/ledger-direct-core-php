@@ -16,6 +16,7 @@ use Hardcastle\LedgerDirect\Core\Testing\InMemoryCache;
 use Hardcastle\LedgerDirect\Core\Testing\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncThrottle;
+use Hardcastle\LedgerDirect\Core\Xrpl\XrplTransaction;
 use PHPUnit\Framework\TestCase;
 
 final class LedgerDirectTest extends TestCase
@@ -41,6 +42,38 @@ final class LedgerDirectTest extends TestCase
     {
         self::assertNull($this->create()->syncThrottle());
         self::assertInstanceOf(SyncThrottle::class, $this->create(cache: new InMemoryCache())->syncThrottle());
+    }
+
+    /** The root hands its cache to the sync, so a testnet reset costs one failing request, not one per sync. */
+    public function testTheSyncRemembersATestnetResetThroughTheRootsCache(): void
+    {
+        $client = new FakeHttpClient();
+        $repository = new InMemoryXrplTransactionRepository();
+        $repository->saveTransactions([new XrplTransaction(
+            network: 'testnet',
+            ledgerIndex: '45000000',
+            hash: 'HASH_STALE_EPOCH',
+            ctid: 'C2AEA54000000001',
+            account: 'rSender',
+            destination: 'rMerchant',
+            destinationTag: 1,
+            date: 800000000,
+            meta: [],
+            tx: [],
+        )]);
+        $sync = $this->create(client: $client, repository: $repository, cache: new InMemoryCache())->syncService();
+        $empty = new Response(200, [], (string) json_encode(['result' => ['status' => 'success', 'transactions' => []]]));
+
+        $client->queueResponse('rippletest', new Response(200, [], (string) json_encode(['result' => ['status' => 'error', 'error' => 'lgrIdxsInvalid']])));
+        $client->queueResponse('rippletest', $empty);
+        $sync->syncTransactions('rMerchant', 'testnet');
+        $client->queueResponse('rippletest', $empty);
+        $sync->syncTransactions('rMerchant', 'testnet');
+
+        $requests = $client->sentRequests();
+        self::assertCount(3, $requests);
+        $third = json_decode((string) $requests[2]->getBody(), true)['params'][0];
+        self::assertArrayNotHasKey('ledger_index_min', $third, 'the second sync continues from the new epoch, not from the stale cursor');
     }
 
     public function testPaymentStatusIsJudgedByTheInjectedClock(): void
