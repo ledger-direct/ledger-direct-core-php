@@ -7,6 +7,7 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Xrpl;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
+use Hardcastle\LedgerDirect\Core\Testing\InMemoryCache;
 use Hardcastle\LedgerDirect\Core\Testing\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentStatus;
@@ -161,6 +162,147 @@ final class SyncServiceTest extends TestCase
         $hashes = array_map(static fn (XrplTransaction $t): string => $t->hash, $repository->storedTransactions());
         self::assertContains('HASH_AFTER_RESET', $hashes);
         self::assertSame('warning', $logger->records()[0]['level']);
+    }
+
+    /**
+     * The stale rows stay after a reset, so the stored cursor stays above the live ledger for
+     * the whole new epoch. With a cache, only the first sync after the reset fails and resyncs;
+     * later ones continue from the ledger the resync reached.
+     */
+    public function testAfterAResetOnlyTheFirstSyncFailsWhenACacheRemembersTheNewEpoch(): void
+    {
+        [$client, $repository, $service, $logger] = $this->makeService(new InMemoryCache());
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_STALE_EPOCH', ledgerIndex: '45000000')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([
+            $this->rawTx(hash: 'HASH_FIRST', account: 'rSender', destination: self::OWN_ADDRESS, ledgerIndex: 300),
+        ]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([
+            $this->rawTx(hash: 'HASH_SECOND', account: 'rSender', destination: self::OWN_ADDRESS, ledgerIndex: 900),
+        ]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $params = self::sentParams($client);
+        self::assertCount(4, $params, 'one failing request, the resync, then one request per sync');
+        self::assertSame(45000001, $params[0]['ledger_index_min']);
+        self::assertArrayNotHasKey('ledger_index_min', $params[1]);
+        self::assertSame(301, $params[2]['ledger_index_min']);
+        self::assertSame(901, $params[3]['ledger_index_min']);
+
+        $hashes = array_map(static fn (XrplTransaction $t): string => $t->hash, $repository->storedTransactions());
+        self::assertContains('HASH_SECOND', $hashes, 'a payment after the reset arrives');
+        self::assertCount(1, array_filter($logger->records(), static fn (array $r): bool => $r['level'] === 'warning'));
+    }
+
+    /** A fresh account after a reset has nothing to continue from: no cursor, which is cheap. */
+    public function testAnEmptyResyncLeavesTheNextSyncWithoutACursorAndWithoutAFailure(): void
+    {
+        [$client, $repository, $service] = $this->makeService(new InMemoryCache());
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_STALE_EPOCH', ledgerIndex: '45000000')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $params = self::sentParams($client);
+        self::assertCount(3, $params);
+        self::assertArrayNotHasKey('ledger_index_min', $params[2]);
+    }
+
+    /** No cache, or the note evicted: the behaviour before, a failing request on every sync. */
+    public function testWithoutACacheEverySyncAfterAResetFailsFirst(): void
+    {
+        [$client, $repository, $service] = $this->makeService();
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_STALE_EPOCH', ledgerIndex: '45000000')]);
+
+        for ($i = 0; $i < 2; $i++) {
+            $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+            $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+            $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+        }
+
+        $params = self::sentParams($client);
+        self::assertCount(4, $params);
+        self::assertSame(45000001, $params[2]['ledger_index_min']);
+    }
+
+    /**
+     * Xahau trims history: a cursor below a node's oldest ledger fails the same way, and the
+     * resync then stores rows above it. The repository reports a new cursor, the note no
+     * longer matches it and the stored cursor is used as it always was.
+     */
+    public function testANoteForAnotherCursorIsIgnored(): void
+    {
+        [$client, $repository, $service] = $this->makeService(new InMemoryCache(), 'XAHAU');
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_OLD', ledgerIndex: '500')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([
+            $this->rawTx(hash: 'HASH_NEWER', account: 'rSender', destination: self::OWN_ADDRESS, ledgerIndex: 8000),
+        ]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        self::assertSame(8001, self::sentParams($client)[2]['ledger_index_min']);
+    }
+
+    /** Without a reset nothing is written and the stored cursor is used, as before. */
+    public function testAnOrdinarySyncNeitherReadsNorNeedsANote(): void
+    {
+        $cache = new InMemoryCache();
+        [$client, $repository, $service] = $this->makeService($cache);
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_OLD', ledgerIndex: '500')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        self::assertSame(501, self::sentParams($client)[0]['ledger_index_min']);
+        self::assertSame([], $cache->keys());
+    }
+
+    /** A cache that fails degrades to the behaviour before, never to no sync. */
+    public function testABrokenCacheStillSyncs(): void
+    {
+        $cache = new InMemoryCache();
+        $cache->failOn('get', 'set');
+        [$client, $repository, $service] = $this->makeService($cache);
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_STALE_EPOCH', ledgerIndex: '45000000')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([
+            $this->rawTx(hash: 'HASH_AFTER_RESET', account: 'rSender', destination: self::OWN_ADDRESS, ledgerIndex: 300),
+        ]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $hashes = array_map(static fn (XrplTransaction $t): string => $t->hash, $repository->storedTransactions());
+        self::assertContains('HASH_AFTER_RESET', $hashes);
+    }
+
+    public function testTheNoteKeyUsesOnlyCharactersPsr16Guarantees(): void
+    {
+        $cache = new InMemoryCache();
+        [$client, $repository, $service] = $this->makeService($cache, 'XAHAU');
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_STALE_EPOCH', ledgerIndex: '45000000')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        self::assertCount(1, $cache->keys());
+        foreach ($cache->keys() as $key) {
+            self::assertMatchesRegularExpression('/^[A-Za-z0-9_.]{1,64}$/', $key);
+        }
     }
 
     public function testAnRpcErrorThatIsNotAStaleCursorStillPropagates(): void
@@ -722,7 +864,7 @@ final class SyncServiceTest extends TestCase
     /**
      * @return array{0: FakeHttpClient, 1: InMemoryXrplTransactionRepository, 2: SyncService, 3: RecordingLogger}
      */
-    private function makeService(): array
+    private function makeService(?InMemoryCache $cache = null, string $chain = 'XRPL'): array
     {
         $client = new FakeHttpClient();
         $repository = new InMemoryXrplTransactionRepository();
@@ -731,9 +873,22 @@ final class SyncServiceTest extends TestCase
             new XrplClient($client, new HttpFactory(), new HttpFactory()),
             $repository,
             $logger,
+            $cache,
+            $chain,
         );
 
         return [$client, $repository, $service, $logger];
+    }
+
+    /**
+     * @return list<array<string, mixed>> the account_tx parameters of every request sent
+     */
+    private static function sentParams(FakeHttpClient $client): array
+    {
+        return array_map(
+            static fn ($request): array => json_decode((string) $request->getBody(), true)['params'][0],
+            $client->sentRequests(),
+        );
     }
 
     /**
@@ -763,11 +918,11 @@ final class SyncServiceTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function rawTx(string $hash, string $account, string $destination, ?int $destinationTag = null): array
+    private function rawTx(string $hash, string $account, string $destination, ?int $destinationTag = null, int $ledgerIndex = 100): array
     {
         return [
             'tx' => array_filter([
-                'ledger_index' => 100,
+                'ledger_index' => $ledgerIndex,
                 'hash' => $hash,
                 'ctid' => 'C000006400000001',
                 'Account' => $account,

@@ -9,6 +9,7 @@ use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface;
 use Hardcastle\LedgerDirect\Core\Sync\LedgerSyncInterface;
 use Psr\Log\LoggerInterface;
+use Psr\SimpleCache\CacheInterface;
 use Throwable;
 use UnexpectedValueException;
 
@@ -22,10 +23,27 @@ final class SyncService implements LedgerSyncInterface
 {
     private const MAX_PAGES = 1000;
 
+    /**
+     * Where a reset's cursor is remembered: chain, network and the account as a digest, like
+     * SyncThrottle's key, but only from characters PSR-16 guarantees (at most 56 of 64).
+     */
+    private const EPOCH_KEY_PREFIX = 'ledger_direct.cursor.v1';
+
+    /** Refreshed by every sync of the account, so it only lapses for an account nobody syncs. */
+    private const EPOCH_TTL_SECONDS = 2592000;
+
+    /**
+     * @param CacheInterface|null $cache remembers the cursor of a new testnet epoch (see
+     *     syncTransactions()); without one every sync after a reset starts with a failing request
+     * @param string $chain part of the cache key: the same account can exist on the XRP Ledger and
+     *     on Xahau
+     */
     public function __construct(
         private readonly XrplClient $xrplClient,
         private readonly XrplTransactionRepositoryInterface $transactionRepository,
         private readonly LoggerInterface $logger,
+        private readonly ?CacheInterface $cache = null,
+        private readonly string $chain = 'XRPL',
     ) {
     }
 
@@ -40,13 +58,33 @@ final class SyncService implements LedgerSyncInterface
         $this->syncTransactions($account, $network);
     }
 
+    /**
+     * After a testnet reset the stored cursor, the highest stored ledger index, stays above the
+     * live ledger for the whole new epoch: the rows from before the reset are kept, and new rows
+     * sit below them. The first sync notices it (lgrIdxsInvalid) and resyncs without a cursor.
+     * With a cache it then remembers that stale cursor together with the highest ledger the
+     * resync saw, and while the repository still reports that stale cursor, later syncs continue
+     * from the remembered ledger instead of failing again. Once the repository reports anything
+     * else, the note no longer applies and is ignored. Without a cache, or with the note evicted,
+     * the behaviour is the one before: a failing request and a full resync on every sync.
+     */
     public function syncTransactions(string $address, string $network): void
     {
         $lastSyncedLedgerIndex = $this->transactionRepository->getLastSyncedLedgerIndex($address, $network);
-        $afterLedgerIndex = $lastSyncedLedgerIndex !== null ? (int) $lastSyncedLedgerIndex : null;
+        $storedCursor = $lastSyncedLedgerIndex !== null ? (int) $lastSyncedLedgerIndex : null;
+
+        $epoch = $storedCursor !== null ? $this->readEpoch($address, $network) : null;
+        if ($epoch !== null && $epoch['stale'] !== $storedCursor) {
+            $epoch = null;
+        }
+
+        $afterLedgerIndex = $epoch !== null ? $epoch['cursor'] : $storedCursor;
 
         try {
-            $this->syncFrom($address, $network, $afterLedgerIndex);
+            $highest = $this->syncFrom($address, $network, $afterLedgerIndex);
+            if ($epoch !== null) {
+                $this->writeEpoch($address, $network, $epoch['stale'], self::higher($epoch['cursor'], $highest));
+            }
         } catch (XrplRpcException $exception) {
             /*
              * The testnet is reset periodically, which rewinds its ledger
@@ -75,22 +113,102 @@ final class SyncService implements LedgerSyncInterface
                 ],
             );
 
-            $this->syncFrom($address, $network, null);
+            $highest = $this->syncFrom($address, $network, null);
+
+            if ($storedCursor !== null) {
+                $this->writeEpoch($address, $network, $storedCursor, $highest);
+            }
         }
+    }
+
+    /**
+     * @return array{stale: int, cursor: ?int}|null
+     */
+    private function readEpoch(string $address, string $network): ?array
+    {
+        if ($this->cache === null) {
+            return null;
+        }
+
+        try {
+            $value = $this->cache->get($this->epochKey($address, $network));
+        } catch (Throwable $exception) {
+            $this->logger->warning('LedgerDirect: reading the reset cursor failed, syncing from the stored one', [
+                'address' => $address,
+                'network' => $network,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        // Anything else is not a note this code wrote; read it as no note at all.
+        if (!is_array($value) || !is_int($value['stale'] ?? null) || !array_key_exists('cursor', $value)
+            || !($value['cursor'] === null || is_int($value['cursor']))) {
+            return null;
+        }
+
+        return ['stale' => $value['stale'], 'cursor' => $value['cursor']];
+    }
+
+    private function writeEpoch(string $address, string $network, int $stale, ?int $cursor): void
+    {
+        if ($this->cache === null) {
+            return;
+        }
+
+        try {
+            $this->cache->set(
+                $this->epochKey($address, $network),
+                ['stale' => $stale, 'cursor' => $cursor],
+                self::EPOCH_TTL_SECONDS,
+            );
+        } catch (Throwable $exception) {
+            $this->logger->warning('LedgerDirect: remembering the reset cursor failed', [
+                'address' => $address,
+                'network' => $network,
+                'exception' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    private function epochKey(string $address, string $network): string
+    {
+        return implode('.', [
+            self::EPOCH_KEY_PREFIX,
+            strtolower($this->chain),
+            $network,
+            substr(hash('sha256', $address), 0, 16),
+        ]);
+    }
+
+    private static function higher(?int $a, ?int $b): ?int
+    {
+        return $a === null ? $b : ($b === null ? $a : max($a, $b));
     }
 
     /**
      * One pass of the paginated fetch-and-store loop, capped at MAX_PAGES —
      * the same safety-guard shape used elsewhere in the core for an
      * otherwise-open-ended loop against external/injected dependencies.
+     *
+     * @return int|null the highest ledger index of any transaction fetched, null when none came
      */
-    private function syncFrom(string $address, string $network, ?int $afterLedgerIndex): void
+    private function syncFrom(string $address, string $network, ?int $afterLedgerIndex): ?int
     {
         $marker = null;
         $pages = 0;
+        $highest = null;
 
         do {
             $page = $this->xrplClient->fetchAccountTransactions($address, $network, $afterLedgerIndex, $marker);
+
+            foreach ($page['transactions'] as $raw) {
+                $index = $raw['tx']['ledger_index'] ?? null;
+                if (is_numeric($index)) {
+                    $highest = self::higher($highest, (int) $index);
+                }
+            }
 
             if ($page['transactions'] !== []) {
                 $this->storeIncomingNewTransactions($page['transactions'], $address, $network);
@@ -99,6 +217,8 @@ final class SyncService implements LedgerSyncInterface
             $marker = $page['marker'];
             $pages++;
         } while ($marker !== null && $pages < self::MAX_PAGES);
+
+        return $highest;
     }
 
     /**

@@ -148,7 +148,7 @@ final class LedgerDirect
 
     public function syncService(): SyncService
     {
-        return $this->syncService ??= new SyncService($this->xrplClient(), $this->transactionRepository, $this->logger);
+        return $this->syncService ??= new SyncService($this->xrplClient(), $this->transactionRepository, $this->logger, $this->cache, $this->chain);
     }
 
     public function destinationTagService(): DestinationTagService
