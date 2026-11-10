@@ -116,6 +116,7 @@ final class SyncService implements LedgerSyncInterface
             $highest = $this->syncFrom($address, $network, null);
 
             if ($storedCursor !== null) {
+                // An empty resync remembers no ledger: the next sync then asks without a cursor.
                 $this->writeEpoch($address, $network, $storedCursor, $highest);
             }
         }
@@ -192,7 +193,7 @@ final class SyncService implements LedgerSyncInterface
      * the same safety-guard shape used elsewhere in the core for an
      * otherwise-open-ended loop against external/injected dependencies.
      *
-     * @return int|null the highest ledger index of any transaction fetched, null when none came
+     * @return int|null the highest ledger index fetched completely, null when none came
      */
     private function syncFrom(string $address, string $network, ?int $afterLedgerIndex): ?int
     {
@@ -217,6 +218,15 @@ final class SyncService implements LedgerSyncInterface
             $marker = $page['marker'];
             $pages++;
         } while ($marker !== null && $pages < self::MAX_PAGES);
+
+        /*
+         * Stopped at the page cap with a marker left: the last ledger may be only partly
+         * fetched. Report the one before it, so a remembered cursor fetches that ledger again;
+         * findExistingHashes() keeps the repeat from duplicating anything.
+         */
+        if ($marker !== null && $highest !== null) {
+            return $highest - 1;
+        }
 
         return $highest;
     }

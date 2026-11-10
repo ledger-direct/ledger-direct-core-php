@@ -200,6 +200,31 @@ final class SyncServiceTest extends TestCase
         self::assertCount(1, array_filter($logger->records(), static fn (array $r): bool => $r['level'] === 'warning'));
     }
 
+    /**
+     * A resync that stops at the page cap may have fetched only part of its last ledger. The
+     * remembered cursor then fetches that ledger again instead of starting after it.
+     */
+    public function testAResyncStoppedAtThePageCapFetchesItsLastLedgerAgain(): void
+    {
+        [$client, $repository, $service] = $this->makeService(new InMemoryCache());
+        $repository->saveTransactions([$this->hydrated(hash: 'HASH_STALE_EPOCH', ledgerIndex: '45000000')]);
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxErrorResponse('lgrIdxsInvalid'));
+        for ($page = 1; $page <= 1000; $page++) {
+            $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([
+                $this->rawTx(hash: "HASH_PAGE_{$page}", account: 'rSender', destination: self::OWN_ADDRESS, ledgerIndex: 100 + intdiv($page, 2)),
+            ], 'MARKER'));
+        }
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $client->queueResponse('s.altnet.rippletest.net', $this->accountTxResponse([]));
+        $service->syncTransactions(self::OWN_ADDRESS, 'testnet');
+
+        $params = self::sentParams($client);
+        self::assertCount(1002, $params);
+        self::assertSame(600, $params[1001]['ledger_index_min'], 'ledger 600 was only partly fetched');
+    }
+
     /** A fresh account after a reset has nothing to continue from: no cursor, which is cheap. */
     public function testAnEmptyResyncLeavesTheNextSyncWithoutACursorAndWithoutAFailure(): void
     {
