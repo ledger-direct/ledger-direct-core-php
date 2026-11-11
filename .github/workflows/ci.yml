@@ -89,9 +89,9 @@ jobs:
           coverage: none
 
       # composer.lock is not committed, so the `test` job always resolves the
-      # newest allowed dependency. brick/math spans nine 0.x minors here, and
-      # its floor (0.12, where RoundingMode's cases are still SCREAMING_SNAKE)
-      # is the half the `test` job never touches.
+      # newest allowed dependency. brick/math spans nine 0.x minors and 1.0
+      # here, and its floor (0.12, where RoundingMode's cases are still
+      # SCREAMING_SNAKE) is the half the `test` job never touches.
       - name: Install lowest dependencies
         run: composer update --prefer-lowest --prefer-stable --prefer-dist --no-progress
 
