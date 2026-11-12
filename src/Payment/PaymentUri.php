@@ -17,7 +17,7 @@ use InvalidArgumentException;
  *
  * The form is the one Xaman's parser (xumm-string-decode) accepts:
  * `https://xrplf.org//send?to=<account>&dt=<tag>&amount=<amount>`, for a
- * token with `currency=<hex>&issuer=<address>`. Verified by scanning with
+ * token with `currency=<hex>&issuer=<address>`, and always `network=<key>`. Verified by scanning with
  * Xaman on the testnet (2026-09-28, PW-04): `amount` is read as the XRP
  * decimal the page shows — not as drops — and a token request takes the
  * currency and issuer over. So the request carries exactly the amount the
@@ -37,15 +37,26 @@ final class PaymentUri
     public const AMOUNT_MODE = self::AMOUNT_DISPLAYED;
 
     /**
-     * Xaman's network keys for a Xahau request. The same r-address is valid on
-     * both chains, so a Xahau request names its network: a customer whose Xaman
-     * is on another network is offered the switch (scan test on the Xahau
-     * testnet, 2026-11-06). An XRPL request carries no network, as verified in PW-04.
+     * Xaman's network keys (xaman-app, src/common/constants/network.ts), by chain
+     * and network. The same r-address is valid on the XRP Ledger and on Xahau, and
+     * Xaman pays a request without a network on whichever network it is on: an XRP
+     * request scanned while Xaman was on Xahau opened an XAH payment of the same
+     * amount (2026-11-12). With the key Xaman offers the switch instead (scan test
+     * on the Xahau testnet, 2026-11-06). So every request names its network.
      */
-    public const XAHAU_NETWORK_KEYS = [
-        'mainnet' => 'XAHAU',
-        'testnet' => 'XAHAUTESTNET',
+    public const NETWORK_KEYS = [
+        'XRPL' => [
+            'mainnet' => 'MAINNET',
+            'testnet' => 'TESTNET',
+        ],
+        'XAHAU' => [
+            'mainnet' => 'XAHAU',
+            'testnet' => 'XAHAUTESTNET',
+        ],
     ];
+
+    /** @deprecated since 0.11.3, use NETWORK_KEYS['XAHAU'] */
+    public const XAHAU_NETWORK_KEYS = self::NETWORK_KEYS['XAHAU'];
 
     /**
      * @param string $amountDue the amount to send, as the page shows it: the
@@ -67,10 +78,8 @@ final class PaymentUri
             $parameters['issuer'] = (string) $intent->amountRequested['issuer'];
         }
 
-        if ($intent->chain === 'XAHAU') {
-            $parameters['network'] = self::XAHAU_NETWORK_KEYS[$intent->network]
-                ?? throw new InvalidArgumentException("Unsupported network '{$intent->network}'.");
-        }
+        $parameters['network'] = self::NETWORK_KEYS[$intent->chain][$intent->network]
+            ?? throw new InvalidArgumentException("Unsupported network '{$intent->network}' on chain '{$intent->chain}'.");
 
         return self::BASE . '?' . http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
     }
