@@ -124,6 +124,10 @@ Every Monday, and on demand, `ci.yml` checks that the ruleset on GitHub matches 
 (`.github/rulesets/check.sh`). Who may bypass the rules is not part of that check: GitHub shows the
 bypass list only to admins of the repository.
 
+Tags have a ruleset of their own, `.github/rulesets/tags.json`: a tag can be created, never moved
+or deleted, so a version on Packagist always stands for the same commit. It is applied and checked
+the same way.
+
 ## Distribution
 
 At dev time this is a versioned Composer package. At release time it is bundled into each
