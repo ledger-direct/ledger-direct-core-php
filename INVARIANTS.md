@@ -190,7 +190,7 @@ identical on every platform; the page script only renders it as a QR code, and t
 open it. The form is the one Xaman's parser accepts:
 
 ```
-https://xrplf.org//send?to=<account>&dt=<tag>[&amount=<amount>][&currency=<hex>&issuer=<address>]
+https://xrplf.org//send?to=<account>&dt=<tag>[&amount=<amount>][&currency=<hex>&issuer=<address>]&network=<key>
 ```
 
 - `to` and `dt` always; `currency` and `issuer` for an issued currency, exactly as quoted in the
@@ -203,8 +203,13 @@ https://xrplf.org//send?to=<account>&dt=<tag>[&amount=<amount>][&currency=<hex>&
 - `AMOUNT_MODE` is `AMOUNT_DISPLAYED`. `AMOUNT_NONE` (address and tag only) stays available for a
   platform whose wallets have not been verified; it is the safe default for an unverified wallet,
   since a wrong unit is a money error.
-- Parameters are RFC 3986-encoded; the order is `to`, `dt`, `amount`, `currency`, `issuer`.
-- On Xahau the request names its network (`network`, last); see "Xahau", Payment request.
+- Parameters are RFC 3986-encoded; the order is `to`, `dt`, `amount`, `currency`, `issuer`,
+  `network`.
+- `network` always, last: Xaman's key (`MAINNET`, `TESTNET` on the XRP Ledger; `XAHAU`,
+  `XAHAUTESTNET` on Xahau). Without it Xaman pays the request on whichever network it is on, and
+  the r-address is valid on both chains: scanned while Xaman was on Xahau, an XRP request opened
+  an XAH payment of the same amount (2026-11-12). With it Xaman offers the switch. A network
+  without a key (devnet) is refused rather than sent without one.
 
 `Core\Presentation\AccentColor` sits next to it as the one design rule every payment page
 shares: a merchant's accent colour is used only if it carries white text at WCAG 4.5 : 1;
@@ -472,7 +477,8 @@ The XRPL form plus `network=XAHAU` (mainnet) or `network=XAHAUTESTNET` (testnet)
 query. With it Xaman offers the switch when it is set to another network; without it the request
 would be paid on whichever network the wallet is on — and the same r-address may exist there. The
 request without the parameter was paid on Xahau as a `Payment` when Xaman was already on Xahau;
-the parameter was shown to trigger the switch hint. XRPL requests carry no network (PW-04).
+the parameter was shown to trigger the switch hint. XRP Ledger requests name theirs too, since
+2026-11-12; see "Payment request".
 
 ### Known gaps
 

@@ -27,7 +27,7 @@ final class PaymentUriTest extends TestCase
 
         $uri = PaymentUri::forIntent($this->xrp(0.83211), '0.83211');
 
-        $this->assertSame(PaymentUri::BASE . '?to=' . self::ACCOUNT . '&dt=' . self::TAG . '&amount=0.83211', $uri);
+        $this->assertSame(PaymentUri::BASE . '?to=' . self::ACCOUNT . '&dt=' . self::TAG . '&amount=0.83211&network=TESTNET', $uri);
     }
 
     /**
@@ -38,7 +38,7 @@ final class PaymentUriTest extends TestCase
     {
         $uri = PaymentUri::forIntent($this->xrp(0.83211), '0.83211', PaymentUri::AMOUNT_NONE);
 
-        $this->assertSame(PaymentUri::BASE . '?to=' . self::ACCOUNT . '&dt=' . self::TAG, $uri);
+        $this->assertSame(PaymentUri::BASE . '?to=' . self::ACCOUNT . '&dt=' . self::TAG . '&network=TESTNET', $uri);
     }
 
     public function testTheDisplayedAmountIsPassedThroughUnchanged(): void
@@ -66,7 +66,7 @@ final class PaymentUriTest extends TestCase
 
         $this->assertSame(
             PaymentUri::BASE . '?to=' . self::ACCOUNT . '&dt=' . self::TAG
-            . '&currency=524C555344000000000000000000000000000000&issuer=rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV',
+            . '&currency=524C555344000000000000000000000000000000&issuer=rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV&network=TESTNET',
             $uri
         );
     }
@@ -77,9 +77,30 @@ final class PaymentUriTest extends TestCase
 
         $this->assertSame(
             PaymentUri::BASE . '?to=' . self::ACCOUNT . '&dt=' . self::TAG
-            . '&amount=1.16&currency=5553444300000000000000000000000000000000&issuer=rHuGNhqTG32mfmAvWA8hUyWRLV3tCSwKQt',
+            . '&amount=1.16&currency=5553444300000000000000000000000000000000&issuer=rHuGNhqTG32mfmAvWA8hUyWRLV3tCSwKQt&network=TESTNET',
             $uri
         );
+    }
+
+    /**
+     * Xaman pays a request without a network on whichever network it is on, and the
+     * r-address is valid on Xahau too: scanned while Xaman was on Xahau, an XRP request
+     * opened an XAH payment (2026-11-12). With Xaman's key it offers the switch instead.
+     */
+    public function testAnXrpLedgerRequestNamesItsNetworkLast(): void
+    {
+        $this->assertStringEndsWith('&amount=0.83211&network=TESTNET', PaymentUri::forIntent($this->xrp(0.83211), '0.83211'));
+        $this->assertStringEndsWith('&amount=0.83211&network=MAINNET', PaymentUri::forIntent($this->xrp(0.83211, 'mainnet'), '0.83211'));
+        $this->assertStringEndsWith('&dt=' . self::TAG . '&network=MAINNET', PaymentUri::forIntent($this->xrp(0.83211, 'mainnet'), '0.83211', PaymentUri::AMOUNT_NONE));
+        $this->assertSame(['mainnet' => 'XAHAU', 'testnet' => 'XAHAUTESTNET'], PaymentUri::XAHAU_NETWORK_KEYS);
+    }
+
+    public function testANetworkXamanDoesNotKnowIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Unsupported network 'devnet' on chain 'XRPL'.");
+
+        PaymentUri::forIntent($this->xrp(1.0, 'devnet'), '1');
     }
 
     /**
@@ -97,10 +118,10 @@ final class PaymentUriTest extends TestCase
         $this->assertStringContainsString('to=r%26%3D%3F%23&dt=1&amount=1', PaymentUri::forIntent($intent, '1'));
     }
 
-    private function xrp(float $amount): PaymentIntent
+    private function xrp(float $amount, string $network = 'testnet'): PaymentIntent
     {
         return PaymentIntent::quote(
-            type: 'xrp-payment', chain: 'XRPL', network: 'testnet', baseAsset: 'XRP', quoteCurrency: 'EUR',
+            type: 'xrp-payment', chain: 'XRPL', network: $network, baseAsset: 'XRP', quoteCurrency: 'EUR',
             pairing: 'XRP/EUR', exchangeRate: 1.2, amountRequested: $amount,
             destinationAccount: self::ACCOUNT, destinationTag: self::TAG,
         );
