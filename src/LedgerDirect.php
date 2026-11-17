@@ -12,6 +12,7 @@ use Hardcastle\LedgerDirect\Core\Payment\SettlementPolicy;
 use Hardcastle\LedgerDirect\Core\Port\ConfigProviderInterface;
 use Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface;
 use Hardcastle\LedgerDirect\Core\Price\PriceService;
+use Hardcastle\LedgerDirect\Core\Xrpl\AccountInspector;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncService;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncThrottle;
@@ -45,6 +46,7 @@ use Psr\SimpleCache\CacheInterface;
 final class LedgerDirect
 {
     private ?XrplClient $xrplClient = null;
+    private ?AccountInspector $accountInspector = null;
     private ?PriceService $priceService = null;
     private ?SyncService $syncService = null;
     private ?DestinationTagService $destinationTagService = null;
@@ -132,6 +134,15 @@ final class LedgerDirect
     public function xrplClient(): XrplClient
     {
         return $this->xrplClient ??= new XrplClient($this->httpClient, $this->requestFactory, $this->streamFactory, $this->chain);
+    }
+
+    /**
+     * Whether the receiving account can take each asset: for the checkout (offers()) and the
+     * configuration screen (assess()). Cached in the same cache as the rates.
+     */
+    public function accountInspector(): AccountInspector
+    {
+        return $this->accountInspector ??= new AccountInspector($this->xrplClient(), $this->logger, $this->cache, chain: $this->chain);
     }
 
     public function priceService(): PriceService

@@ -1,0 +1,76 @@
+{
+    "result": {
+        "state": {
+            "build_version": "3.4.1",
+            "complete_ledgers": "13073099-22396432",
+            "initial_sync_duration_us": "414545113",
+            "io_latency_ms": 1,
+            "jq_trans_overflow": "487506",
+            "last_close": {
+                "converge_time": 2000,
+                "proposers": 6
+            },
+            "load_base": 256,
+            "load_factor": 256,
+            "load_factor_fee_escalation": 256,
+            "load_factor_fee_queue": 256,
+            "load_factor_fee_reference": 256,
+            "load_factor_server": 256,
+            "network_id": 1,
+            "peer_disconnects": "107925",
+            "peer_disconnects_resources": "1333",
+            "peers": 110,
+            "ports": [
+                {
+                    "port": "2459",
+                    "protocol": [
+                        "peer"
+                    ]
+                },
+                {
+                    "port": "50051",
+                    "protocol": [
+                        "grpc"
+                    ]
+                }
+            ],
+            "pubkey_node": "n94fvDin1mzPPqyK6cm6DWKpvYzVavSwvCRijCWwYiKkmaADHNED",
+            "server_state": "full",
+            "server_state_duration_us": "2715139104706",
+            "state_accounting": {
+                "connected": {
+                    "duration_us": "409485651",
+                    "transitions": "2"
+                },
+                "disconnected": {
+                    "duration_us": "1054320",
+                    "transitions": "2"
+                },
+                "full": {
+                    "duration_us": "4308631894300",
+                    "transitions": "40"
+                },
+                "syncing": {
+                    "duration_us": "124243953",
+                    "transitions": "40"
+                },
+                "tracking": {
+                    "duration_us": "4273",
+                    "transitions": "40"
+                }
+            },
+            "time": "2026-Nov-17 12:23:45.125195 UTC",
+            "uptime": 4309166,
+            "validated_ledger": {
+                "base_fee": 10,
+                "close_time": 848233422,
+                "hash": "D452541108FAC95B7744B02B3CE325E41ED39821C8CBF8A1444A169919681FD2",
+                "reserve_base": 1000000,
+                "reserve_inc": 200000,
+                "seq": 22396432
+            },
+            "validation_quorum": 5
+        },
+        "status": "success"
+    }
+}

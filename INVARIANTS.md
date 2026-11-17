@@ -216,6 +216,37 @@ shares: a merchant's accent colour is used only if it carries white text at WCAG
 otherwise the default `#1f5eff`. Both classes are presentation helpers with no I/O — the core
 still knows no HTTP and renders no HTML.
 
+## Receiving account — can it take the payment?
+
+A valid address (Security, below) is not yet an account that can be paid. On the testnet the
+harness only ever uses ideal accounts — funded, trust lines set — so what a merchant's real account
+lacks shows only on mainnet, after the order exists. Reproduced on 2026-11-17 in the Shopware dev
+shop (testnet): the shop offered RLUSD to an account without a trust line, created the order, and
+the customer's payment failed with `tecPATH_DRY`. Hence one check for every chain,
+`Account\ReceivingAccountCheck`, implemented by `Xrpl\AccountInspector` (XRPL, Xahau) and
+`Stellar\AccountInspector`, read-only and cached:
+
+- **`offers($account, $asset, $network, $amount)`** — the checkout asks it for every asset it would
+  list and leaves out what it denies, so no payment intent exists that nobody can settle.
+- **`assess($account, $network, $assets)`** — the configuration screen asks it and shows every
+  `Account\Finding` next to the option. The option stays visible and switchable: the merchant sees
+  that it exists and what the account still needs. Reads afresh, and refreshes what the checkout
+  reads.
+
+| State of the receiving account | Finding | Checkout |
+|---|---|---|
+| Trust line missing, frozen, full, or not authorized where the issuer requires authorization; issuer globally frozen | `trustline_missing`, `trustline_frozen`, `trustline_full`, `trustline_not_authorized`, `issuer_frozen` | issued asset **not offered** |
+| XRPL/Xahau: not activated | `account_missing` (with the base reserve) | issued assets not offered; the native asset offered unless the amount is known and below the base reserve — the first payment from the reserve up activates the account (reproduced: 1.13738 XRP to a fresh address, settled) |
+| Stellar: account does not exist | `account_missing` | **nothing** offered: a Stellar payment never creates its destination (`op_no_destination`) |
+| XRPL/Xahau: `DepositAuth` set | `deposit_auth` | **offered** — business flows in which pre-authorized customers or agents order through an API are possible; the merchant gets a clear warning only |
+| The node cannot be asked | `not_checked` | issued assets not offered (fail closed), the native asset offered |
+
+The base reserve comes from the node (`server_state`, validated ledger), not from a constant: the
+validators vote on it and the chains differ. The trust line is the one to the registry's issuer
+for the asset's currency (`StablecoinRegistry`); a line to any other issuer does not count.
+Background and the decisions: `Documentation/Mainnet-Testing.md` (K3) in the LedgerDirect
+documentation.
+
 ## Rate caching
 
 Optional, and **off entirely** unless a PSR-16 cache is injected into `PriceService` — without one
@@ -381,6 +412,8 @@ and the `is_authorized` flag) and `issuerFlags()` (`auth_revocable`, `auth_clawb
 read-only and cached. The adapter offers an asset only when it is priceable **and** the receiving
 account can take it, and shows the merchant the issuer's flags as a one-liner — a token whose
 issuer can freeze and claw back is worth knowing about in a product that sells self-custody.
+`offers()` and `assess()` put this behind the check every chain shares ("Receiving account — can it
+take the payment?").
 
 ### Registry — security-critical
 
