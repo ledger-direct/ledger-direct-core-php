@@ -16,6 +16,7 @@ use Hardcastle\LedgerDirect\Core\Testing\FrozenClock;
 use Hardcastle\LedgerDirect\Core\Testing\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
+use Hardcastle\LedgerDirect\Core\Payment\PaymentUri;
 use PHPUnit\Framework\TestCase;
 
 final class PaymentIntentServiceTest extends TestCase
@@ -150,6 +151,31 @@ final class PaymentIntentServiceTest extends TestCase
         $clock->advance(60);
 
         self::assertSame(1_700_000_360, $service->quoteForOrder(50.0, 'USD', 'RLUSD')->expiry);
+    }
+
+    /**
+     * A shop set to mainnet quotes on mainnet: the network, the mainnet account and the
+     * registry's mainnet issuers reach the intent and the payment request. The testnet tests
+     * above never enter these branches (Documentation/Mainnet-Testing.md: every mainnet branch
+     * runs in a test at least once).
+     */
+    public function testAMainnetShopQuotesOnMainnetWithTheMainnetIssuers(): void
+    {
+        $config = new FakeConfigProvider(network: 'mainnet', destinationAccount: 'rMainnetAccount');
+        $service = $this->makeService(new FakeHttpClient(), new InMemoryXrplTransactionRepository(), $config);
+
+        $rlusd = $service->quoteForOrder(50.0, 'USD', 'RLUSD');
+        self::assertSame('mainnet', $rlusd->network);
+        self::assertSame('rMainnetAccount', $rlusd->destinationAccount);
+        self::assertSame('rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', $rlusd->amountRequested['issuer']);
+
+        $uri = PaymentUri::forIntent($rlusd, '50');
+        self::assertStringContainsString('to=rMainnetAccount', $uri);
+        self::assertStringContainsString('issuer=rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', $uri);
+        self::assertStringEndsWith('&network=MAINNET', $uri);
+
+        $usdc = $service->quoteForOrder(50.0, 'USD', 'USDC');
+        self::assertSame('rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE', $usdc->amountRequested['issuer']);
     }
 
     private function makeService(
