@@ -6,6 +6,7 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Stellar;
 
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
+use Hardcastle\LedgerDirect\Core\Account\Finding;
 use Hardcastle\LedgerDirect\Core\Stellar\AccountInspector;
 use Hardcastle\LedgerDirect\Core\Stellar\HorizonClient;
 use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
@@ -101,6 +102,53 @@ final class AccountInspectorTest extends TestCase
 
         self::assertTrue($inspector->accountExists(StellarFixtures::MERCHANT, 'testnet'));
         self::assertSame(['warning', 'warning'], array_column($logger->records(), 'level'));
+    }
+
+    /** The M0 merchant trusts TESTUSD only: the registry's USDC and EURC cannot arrive. */
+    public function testTheCheckoutOffersXlmToAnExistingAccountAndNoTokenWithoutATrustLine(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('/accounts/' . StellarFixtures::MERCHANT, StellarFixtures::response('horizon/merchant-account.json'));
+        $inspector = $this->inspector($client, new InMemoryCache(new FrozenClock()));
+
+        self::assertTrue($inspector->offers(StellarFixtures::MERCHANT, 'XLM', 'testnet'));
+        self::assertFalse($inspector->offers(StellarFixtures::MERCHANT, 'USDC', 'testnet'));
+        self::assertFalse($inspector->offers(StellarFixtures::MERCHANT, 'EURC', 'testnet', '1.00'));
+
+        $assessment = $inspector->assess(StellarFixtures::MERCHANT, 'testnet', ['XLM', 'USDC', 'EURC'], fresh: false);
+        self::assertSame([Finding::TRUSTLINE_MISSING, Finding::TRUSTLINE_MISSING], array_column($assessment->findings, 'code'));
+        self::assertSame(['USDC', 'EURC'], array_column($assessment->findings, 'asset'));
+        self::assertSame('GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5', $assessment->findings[0]->context['issuer']);
+    }
+
+    /** A Stellar payment never creates its destination: nothing is offered, XLM included. */
+    public function testAnAccountThatDoesNotExistIsOfferedNothing(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('/accounts/GNOBODY', new Response(404, [], '{"status":404}'));
+        $client->queueResponse('/accounts/GNOBODY', new Response(404, [], '{"status":404}'));
+        $inspector = $this->inspector($client, new InMemoryCache(new FrozenClock()));
+
+        self::assertFalse($inspector->offers('GNOBODY', 'XLM', 'testnet'));
+        self::assertFalse($inspector->offers('GNOBODY', 'USDC', 'testnet'));
+
+        $assessment = $inspector->assess('GNOBODY', 'testnet', ['XLM', 'USDC']);
+        self::assertSame([Finding::ACCOUNT_MISSING, Finding::TRUSTLINE_MISSING], array_column($assessment->findings, 'code'));
+        self::assertTrue($assessment->findings[0]->blocksOffer);
+        self::assertCount(2, $client->sentRequests(), 'the checkout from the cache, the configuration screen afresh');
+    }
+
+    public function testUnreachableHorizonLeavesTokensOutKeepsXlmAndSaysSo(): void
+    {
+        $client = new FakeHttpClient();
+        foreach (range(1, 3) as $ignored) {
+            $client->queueResponse('/accounts/' . StellarFixtures::MERCHANT, new Response(503, [], ''));
+        }
+        $inspector = $this->inspector($client);
+
+        self::assertTrue($inspector->offers(StellarFixtures::MERCHANT, 'XLM', 'testnet'));
+        self::assertFalse($inspector->offers(StellarFixtures::MERCHANT, 'USDC', 'testnet'));
+        self::assertSame([Finding::NOT_CHECKED], array_column($inspector->assess(StellarFixtures::MERCHANT, 'testnet', ['XLM', 'USDC'])->findings, 'code'));
     }
 
     private function inspector(FakeHttpClient $client, ?InMemoryCache $cache = null): AccountInspector

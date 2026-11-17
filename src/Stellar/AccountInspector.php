@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Hardcastle\LedgerDirect\Core\Stellar;
 
 use Brick\Math\BigDecimal;
+use Hardcastle\LedgerDirect\Core\Account\Assessment;
+use Hardcastle\LedgerDirect\Core\Account\Finding;
+use Hardcastle\LedgerDirect\Core\Account\ReceivingAccountCheck;
+use Hardcastle\LedgerDirect\Core\LedgerDirectException;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
 use Throwable;
@@ -16,21 +20,99 @@ use Throwable;
  * may carry flags a merchant should know about. Read-only, over Horizon's
  * account record, cached so a checkout render does not cost a Horizon call.
  *
- * What the adapter does with the answers is its business: hide an asset
- * the account cannot receive, show the issuer's flags as a one-liner.
+ * The checkout asks offers(), the configuration screen assess() (INVARIANTS.md,
+ * "Receiving account"); the primitives below stay for what else an adapter
+ * shows, such as the issuer's flags as a one-liner.
  */
-final class AccountInspector
+final class AccountInspector implements ReceivingAccountCheck
 {
     private const CACHE_KEY_PREFIX = 'ledger-direct.stellar.account.v1';
 
     public const DEFAULT_CACHE_TTL_SECONDS = 300;
+
+    private readonly StablecoinRegistry $registry;
 
     public function __construct(
         private readonly HorizonClient $horizon,
         private readonly LoggerInterface $logger,
         private readonly ?CacheInterface $cache = null,
         private readonly int $cacheTtlSeconds = self::DEFAULT_CACHE_TTL_SECONDS,
+        ?StablecoinRegistry $registry = null,
     ) {
+        $this->registry = $registry ?? new StablecoinRegistry();
+    }
+
+    /**
+     * Unlike XRPL, a Stellar payment never creates its destination (op_no_destination): an
+     * account that does not exist is offered nothing, whatever the amount.
+     */
+    public function offers(string $account, string $asset, string $network, ?string $amount = null): bool
+    {
+        $native = $asset === 'XLM';
+
+        try {
+            if ($native) {
+                return $this->accountExists($account, $network);
+            }
+
+            return $this->canReceive($account, $asset, $this->registry->issuer($asset, $network), $network, $amount);
+        } catch (LedgerDirectException $exception) {
+            $this->logger->warning('LedgerDirect: could not check the Stellar receiving account; ' . ($native ? 'offering XLM' : 'leaving the issued asset out'), [
+                'network' => $network,
+                'account' => $account,
+                'asset' => $asset,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return $native;
+        }
+    }
+
+    public function assess(string $account, string $network, array $assets, bool $fresh = true): Assessment
+    {
+        try {
+            $record = $this->accountRecord($account, $network, $fresh);
+        } catch (LedgerDirectException $exception) {
+            return new Assessment($account, $network, [
+                new Finding(Finding::NOT_CHECKED, null, false, ['error' => $exception->getMessage()]),
+            ]);
+        }
+
+        if ($record === null) {
+            // Nothing can arrive, XLM included: a blocking finding per asset, plus the account's own.
+            $findings = [new Finding(Finding::ACCOUNT_MISSING, null, true)];
+            foreach ($assets as $asset) {
+                if ($asset !== 'XLM') {
+                    $findings[] = new Finding(Finding::TRUSTLINE_MISSING, $asset, true, ['issuer' => $this->registry->issuer($asset, $network)]);
+                }
+            }
+
+            return new Assessment($account, $network, $findings);
+        }
+
+        $findings = [];
+        foreach ($assets as $asset) {
+            if ($asset === 'XLM') {
+                continue;
+            }
+
+            $issuer = $this->registry->issuer($asset, $network);
+            $context = ['issuer' => $issuer];
+            $trustline = $this->trustline($account, $asset, $issuer, $network);
+
+            if ($trustline === null) {
+                $findings[] = new Finding(Finding::TRUSTLINE_MISSING, $asset, true, $context);
+                continue;
+            }
+            if (!$trustline->authorized) {
+                $findings[] = new Finding(Finding::TRUSTLINE_NOT_AUTHORIZED, $asset, true, $context);
+            }
+            if (BigDecimal::of($trustline->headroom())->isZero()) {
+                $findings[] = new Finding(Finding::TRUSTLINE_FULL, $asset, true, $context + ['headroom' => $trustline->headroom()]);
+            }
+        }
+
+        return new Assessment($account, $network, $findings);
     }
 
     public function accountExists(string $account, string $network): bool
@@ -96,12 +178,13 @@ final class AccountInspector
     /**
      * @return array<string, mixed>|null
      */
-    private function accountRecord(string $account, string $network): ?array
+    private function accountRecord(string $account, string $network, bool $fresh = false): ?array
     {
         // PSR-16 guarantees keys of 64 characters; a 56-character account spelled out does not fit.
         $key = implode('.', [self::CACHE_KEY_PREFIX, $network, substr(hash('sha256', $account), 0, 16)]);
 
-        $cached = $this->cacheGet($key);
+        // Fresh: read Horizon, and refresh what the checkout reads.
+        $cached = $fresh ? null : $this->cacheGet($key);
         if (is_array($cached)) {
             return $cached['record'];
         }

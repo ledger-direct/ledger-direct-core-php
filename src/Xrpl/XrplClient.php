@@ -30,6 +30,8 @@ final class XrplClient
      */
     public const ERROR_LEDGER_INDEXES_INVALID = 'lgrIdxsInvalid';
 
+    private const MAX_ACCOUNT_LINES_PAGES = 10;
+
     /**
      * Fixed public endpoints per chain and network (INVARIANTS.md, "Xahau",
      * Endpoints). Xahau's are run by its foundation; a merchant cannot
@@ -133,6 +135,128 @@ final class XrplClient
     }
 
     /**
+     * The account's root entry on the validated ledger, or null when the account does not
+     * exist (`actNotFound`): an address nobody has funded with the base reserve yet.
+     *
+     * @return array<string, mixed>|null the `account_data` object
+     */
+    public function accountInfo(string $address, string $network): ?array
+    {
+        $result = $this->callRpc($network, 'account_info', [
+            'account' => $address,
+            'ledger_index' => 'validated',
+        ]);
+
+        if (($result['status'] ?? null) === 'error') {
+            if (($result['error'] ?? null) === 'actNotFound') {
+                return null;
+            }
+
+            throw $this->resultError('account_info', $network, $result);
+        }
+
+        $data = $result['account_data'] ?? null;
+        if (!is_array($data)) {
+            throw new XrplRpcException("{$this->chain} account_info on {$network} returned no account_data.");
+        }
+
+        return $data;
+    }
+
+    /**
+     * The account's trust lines on the validated ledger, from the account's side (`balance`
+     * positive: the account holds the token; `freeze_peer`: the issuer froze the line;
+     * `peer_authorized`: the issuer authorized it). With $peer, only the lines to that account.
+     * Empty for an account that does not exist.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function accountLines(string $address, string $network, ?string $peer = null): array
+    {
+        $params = ['account' => $address, 'ledger_index' => 'validated', 'limit' => 400];
+        if ($peer !== null) {
+            $params['peer'] = $peer;
+        }
+
+        $lines = [];
+        // A receiving account has a handful of lines; the bound only guards against a node that
+        // keeps answering with a marker.
+        for ($page = 0; $page < self::MAX_ACCOUNT_LINES_PAGES; $page++) {
+            $result = $this->callRpc($network, 'account_lines', $params);
+
+            if (($result['status'] ?? null) === 'error') {
+                if (($result['error'] ?? null) === 'actNotFound') {
+                    return [];
+                }
+
+                throw $this->resultError('account_lines', $network, $result);
+            }
+
+            foreach ($result['lines'] ?? [] as $line) {
+                if (is_array($line)) {
+                    $lines[] = $line;
+                }
+            }
+
+            $marker = $result['marker'] ?? null;
+            if ($marker === null) {
+                return $lines;
+            }
+            $params['marker'] = $marker;
+        }
+
+        throw new XrplRpcException("{$this->chain} account_lines on {$network} for {$address} did not end after " . self::MAX_ACCOUNT_LINES_PAGES . ' pages.');
+    }
+
+    /**
+     * The network's reserves on the validated ledger, in drops: what an account must hold to
+     * exist (`base`) and what each object it owns adds (`increment`). The validators vote on them
+     * and they differ between chains, so they come from the node, not from a constant.
+     *
+     * @return array{base: string, increment: string}
+     */
+    public function reserves(string $network): array
+    {
+        $result = $this->callRpc($network, 'server_state', []);
+
+        if (($result['status'] ?? null) === 'error') {
+            throw $this->resultError('server_state', $network, $result);
+        }
+
+        $ledger = $result['state']['validated_ledger'] ?? null;
+        $base = is_array($ledger) ? self::drops($ledger['reserve_base'] ?? null) : null;
+        $increment = is_array($ledger) ? self::drops($ledger['reserve_inc'] ?? null) : null;
+        if ($base === null || $increment === null) {
+            throw new XrplRpcException("{$this->chain} server_state on {$network} carries no validated ledger reserves.");
+        }
+
+        return ['base' => $base, 'increment' => $increment];
+    }
+
+    /** A drops amount as a digit string, or null when the value is not one. */
+    private static function drops(mixed $value): ?string
+    {
+        if (is_int($value) && $value >= 0) {
+            return (string) $value;
+        }
+
+        return is_string($value) && ctype_digit($value) ? $value : null;
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     */
+    private function resultError(string $method, string $network, array $result): XrplRpcException
+    {
+        $error = isset($result['error']) ? (string) $result['error'] : null;
+
+        return new XrplRpcException(
+            "{$this->chain} {$method} on {$network} failed: " . ($error ?? 'unknown error') . '.',
+            error: $error,
+        );
+    }
+
+    /**
      * Sends the JSON-RPC envelope and returns the decoded `result` object.
      * Throws on transport failure, a non-2xx status, or a malformed body —
      * does NOT interpret `result.status === 'error'`, since what counts as
@@ -149,7 +273,8 @@ final class XrplClient
             $body = json_encode([
                 'jsonrpc' => '2.0',
                 'method' => $method,
-                'params' => [$paramsObject],
+                // An empty PHP array would go out as [] — the node expects an object.
+                'params' => [$paramsObject === [] ? new \stdClass() : $paramsObject],
                 'id' => 1,
             ], JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
