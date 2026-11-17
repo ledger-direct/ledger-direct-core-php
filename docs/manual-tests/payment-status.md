@@ -224,9 +224,14 @@ account, on Stellar a payment never creates its destination.*
    faucet).
 2. Open the checkout; open the configuration.
 
-Expected: XRPL and Xahau — the checkout offers the native asset only; Stellar — the checkout
-offers nothing. The configuration says the account is not activated (with the base reserve on
-XRPL and Xahau).
+Expected: XRPL and Xahau — the checkout offers no issued asset; it offers the native asset if
+the order amount reaches the base reserve, since that payment activates the account. Below the
+base reserve a payment cannot arrive (`tecNO_DST_INSUF_XRP`): a platform that knows the amount
+when it lists the payment methods leaves the native asset out; one that does not (Shopware lists
+them before the cart total is known) offers it, and the configuration's warning is what the
+merchant has. Run the case once with an order above the base reserve and once below it. Stellar
+— the checkout offers nothing. The configuration says the account is not activated (with the
+base reserve on XRPL and Xahau).
 
 Evidence: the address; the list of payment methods; the configuration's message.
 
@@ -235,8 +240,9 @@ Evidence: the address; the list of payment methods; the configuration's message.
 *Contract: as PS-13; `DepositAuth` is a warning only, since business flows with pre-authorized
 senders are possible. XRPL and Xahau only.*
 
-1. Configure the shop with an activated account **with** trust lines on which deposit
-   authorization is set (`AccountSet` with `asfDepositAuth`).
+1. Configure the shop with an activated account with usable trust lines for **every** issued asset
+   that is switched on, and deposit authorization set (`AccountSet` with `asfDepositAuth`) — so
+   that nothing but the deposit authorization differs from a ready account.
 2. Open the checkout; open the configuration.
 
 Expected: the checkout offers every asset; the configuration warns that only pre-authorized
