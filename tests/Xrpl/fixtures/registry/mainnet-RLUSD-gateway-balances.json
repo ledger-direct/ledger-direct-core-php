@@ -1,0 +1,12 @@
+{
+  "result": {
+    "account": "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De",
+    "obligations": {
+      "524C555344000000000000000000000000000000": "721198828.5814989"
+    },
+    "ledger_index": 108394010,
+    "ledger_hash": "D75D1D2C1719C39B1A867B80EA5FD643CA1160C34452F9F450FC92B3791514F0",
+    "status": "success",
+    "validated": true
+  }
+}

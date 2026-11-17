@@ -549,9 +549,15 @@ The ledger's wire encoding is **not** the record's shape, and the core owns the 
 > **Do not hand-transcribe these values from memory.** They were pulled from the Shopware
 > ground-truth `src/Provider/StablecoinProvider.php` by reading the source file directly, once, at
 > authoring time, and are then treated as fixed in `Xrpl\StablecoinRegistry`. This repo has no
-> dependency on, or reference to, the Shopware repo — not even a test — so there is no standing
-> equality check to keep passing; verification happens once, deliberately, whenever these values
-> are touched.
+> dependency on, or reference to, the Shopware repo.
+>
+> **Checked against the issuers since 2026-11-17**, as the Stellar registry is: Circle's USDC
+> contract-address table (rows "XRPL" and "XRPL Testnet") and Ripple's RLUSD documentation (token
+> addresses; "RLUSD on the XRPL", mainnet and testnet issuer and the currency hex) are checked in
+> verbatim under `tests/Xrpl/fixtures/registry/issuer-excerpt.txt`, and the ledger's
+> `gateway_balances` for each issuer from the same day next to it (each has issued exactly that
+> currency, in circulation). `StablecoinRegistryTest` compares the constants with both. Touch a
+> value only with the source open, and record the source again.
 
 ```
 RLUSD  mainnet  issuer rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De  currency 524C555344000000000000000000000000000000

@@ -1,0 +1,17 @@
+# Sources, fetched 2026-11-17 with curl (public pages):
+# https://developers.circle.com/stablecoins/usdc-contract-addresses
+#   rows "XRPL" and "XRPL Testnet" of the USDC contract-address table, verbatim:
+#   "XRPL 5553444300000000000000000000000000000000.rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE"
+#   "XRPL Testnet 5553444300000000000000000000000000000000.rHuGNhqTG32mfmAvWA8hUyWRLV3tCSwKQt"
+# https://docs.ripple.com/products/stablecoin/overview/token-addresses
+#   "For XRPL : Issuer address: rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De"
+# https://docs.ripple.com/products/stablecoin/developer-resources/rlusd-on-the-xrpl
+#   Mainnet "Issuer account address : rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De",
+#   Testnet "Issuer account address : rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV",
+#   samples: RLUSD_CURRENCY_HEX = "524C555344000000000000000000000000000000"
+# The currency codes on both networks are confirmed on the ledger: *-gateway-balances.json.
+# Format: <asset> <network> <currency hex>.<issuer>
+RLUSD mainnet 524C555344000000000000000000000000000000.rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De
+RLUSD testnet 524C555344000000000000000000000000000000.rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV
+USDC mainnet 5553444300000000000000000000000000000000.rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE
+USDC testnet 5553444300000000000000000000000000000000.rHuGNhqTG32mfmAvWA8hUyWRLV3tCSwKQt
