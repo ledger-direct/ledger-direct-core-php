@@ -177,6 +177,25 @@ final class AccountInspectorTest extends TestCase
         self::assertCount(1, $client->sentRequests());
     }
 
+    /**
+     * On mainnet the checkout asks Horizon's public network for the account and looks for the
+     * trust line to Circle's mainnet issuer — not the testnet's.
+     */
+    public function testOnMainnetTheCheckoutAsksThePublicHorizonForTheMainnetIssuer(): void
+    {
+        $record = ['id' => StellarFixtures::MERCHANT, 'account_id' => StellarFixtures::MERCHANT, 'flags' => [], 'balances' => [
+            ['asset_type' => 'native', 'balance' => '100.0000000'],
+            ['asset_type' => 'credit_alphanum4', 'asset_code' => 'USDC', 'asset_issuer' => 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN', 'balance' => '0.0000000', 'limit' => '1000.0000000', 'is_authorized' => true],
+        ]];
+        $client = new FakeHttpClient();
+        $client->queueResponse('/accounts/' . StellarFixtures::MERCHANT, new Response(200, [], (string) json_encode($record)));
+        $inspector = $this->inspector($client, new InMemoryCache(new FrozenClock()));
+
+        self::assertTrue($inspector->offers(StellarFixtures::MERCHANT, 'USDC', 'mainnet'));
+        self::assertFalse($inspector->offers(StellarFixtures::MERCHANT, 'EURC', 'mainnet'), 'no line to the mainnet EURC issuer');
+        self::assertSame('https://horizon.stellar.org/accounts/' . StellarFixtures::MERCHANT, (string) $client->lastRequest()?->getUri());
+    }
+
     private function inspector(FakeHttpClient $client, ?InMemoryCache $cache = null): AccountInspector
     {
         return new AccountInspector(new HorizonClient($client, new HttpFactory()), new RecordingLogger(), $cache);

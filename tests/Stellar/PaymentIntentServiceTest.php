@@ -16,6 +16,7 @@ use Hardcastle\LedgerDirect\Core\Testing\FrozenClock;
 use Hardcastle\LedgerDirect\Core\Testing\InMemoryStellarPaymentRepository;
 use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
 use InvalidArgumentException;
+use Hardcastle\LedgerDirect\Core\Stellar\PaymentUri;
 use PHPUnit\Framework\TestCase;
 
 final class PaymentIntentServiceTest extends TestCase
@@ -123,6 +124,24 @@ final class PaymentIntentServiceTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
         $service->quoteForOrder(10.0, 'USD', 'USDT0');
+    }
+
+    /**
+     * A shop set to mainnet quotes on mainnet: Circle's mainnet issuers reach the intent, and
+     * the SEP-7 request leaves the testnet passphrase out (the public network is the default).
+     */
+    public function testAMainnetShopQuotesOnMainnetWithTheMainnetIssuers(): void
+    {
+        $config = new FakeConfigProvider(network: 'mainnet', destinationAccount: StellarFixtures::MERCHANT);
+        $service = $this->makeService(new FakeHttpClient(), new InMemoryStellarPaymentRepository(), $config);
+
+        $usdc = $service->quoteForOrder(12.34, 'USD', 'USDC');
+        self::assertSame('mainnet', $usdc->network);
+        self::assertSame('GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN', $usdc->amountRequested['issuer']);
+        self::assertStringNotContainsString('network_passphrase', PaymentUri::forIntent($usdc, '12.34'));
+
+        $eurc = $service->quoteForOrder(10.0, 'EUR', 'EURC');
+        self::assertSame('GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2', $eurc->amountRequested['issuer']);
     }
 
     private function makeService(

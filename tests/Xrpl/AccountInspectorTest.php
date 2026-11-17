@@ -245,6 +245,30 @@ final class AccountInspectorTest extends TestCase
         $inspector->offers(self::MERCHANT, 'RLUSD', 'testnet');
     }
 
+    /**
+     * On mainnet the checkout asks the mainnet node and looks for the trust line to the
+     * registry's mainnet issuer; a line to the testnet issuer does not count there.
+     */
+    public function testOnMainnetTheCheckoutAsksTheMainnetNodeForTheMainnetIssuer(): void
+    {
+        $root = FakeNode::result('merchant-account-info.json');
+        $lines = FakeNode::result('merchant-account-lines.json');
+        $lines['lines'][0]['account'] = 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De'; // RLUSD, mainnet issuer
+        $node = (new FakeNode())
+            ->answer('account_info ' . self::MERCHANT, $root)
+            ->answer('account_lines ' . self::MERCHANT, $lines)
+            ->answer('account_info rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', FakeNode::result('rlusd-issuer-account-info.json'))
+            ->answer('account_info rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE', FakeNode::result('usdc-issuer-account-info.json'));
+        $inspector = $this->inspector($node);
+
+        self::assertTrue($inspector->offers(self::MERCHANT, 'RLUSD', 'mainnet'));
+        self::assertFalse($inspector->offers(self::MERCHANT, 'USDC', 'mainnet'), 'the line goes to the testnet USDC issuer');
+        foreach ($node->calls as $call) {
+            self::assertSame('https://xrplcluster.com/', $call['url']);
+        }
+        self::assertContains('rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', array_column(array_column($node->calls, 'params'), 'account'));
+    }
+
     private function testnet(): FakeNode
     {
         return (new FakeNode())
