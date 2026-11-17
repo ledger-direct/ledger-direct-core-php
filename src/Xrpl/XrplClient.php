@@ -203,6 +203,11 @@ final class XrplClient
                 return $lines;
             }
             $params['marker'] = $marker;
+            // The following pages must come from the same ledger as the first, not from whichever
+            // ledger is validated by then (https://xrpl.org/docs/references/http-websocket-apis/api-conventions/markers-and-pagination).
+            if (isset($result['ledger_index']) && is_int($result['ledger_index'])) {
+                $params['ledger_index'] = $result['ledger_index'];
+            }
         }
 
         throw new XrplRpcException("{$this->chain} account_lines on {$network} for {$address} did not end after " . self::MAX_ACCOUNT_LINES_PAGES . ' pages.');

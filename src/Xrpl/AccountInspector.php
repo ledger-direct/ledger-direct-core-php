@@ -49,6 +49,14 @@ final class AccountInspector implements ReceivingAccountCheck
     private readonly StablecoinRegistry $registry;
 
     /**
+     * What one assess() read, by cache key — so its checks use the data it fetched, whether or
+     * not the cache took it. Null outside assess().
+     *
+     * @var array<string, array<string, mixed>>|null
+     */
+    private ?array $read = null;
+
+    /**
      * @param string $chain 'XRPL' or 'XAHAU', as the XrplClient it reads through
      */
     public function __construct(
@@ -92,12 +100,15 @@ final class AccountInspector implements ReceivingAccountCheck
 
     public function assess(string $account, string $network, array $assets, bool $fresh = true): Assessment
     {
+        $this->read = [];
         try {
             return new Assessment($account, $network, $this->findings($account, $network, $assets, $fresh));
         } catch (LedgerDirectException $exception) {
             return new Assessment($account, $network, [
                 new Finding(Finding::NOT_CHECKED, null, false, ['error' => $exception->getMessage()]),
             ]);
+        } finally {
+            $this->read = null;
         }
     }
 
@@ -130,7 +141,7 @@ final class AccountInspector implements ReceivingAccountCheck
         ['currency' => $currency, 'issuer' => $issuer] = $this->issued($asset, $network);
 
         foreach ($this->accountLines($account, $network, $fresh) as $line) {
-            if (($line['account'] ?? null) === $issuer && strcasecmp((string) ($line['currency'] ?? ''), $currency) === 0) {
+            if (($line['account'] ?? null) === $issuer && self::sameCurrency((string) ($line['currency'] ?? ''), $currency)) {
                 return Trustline::fromAccountLine($line);
             }
         }
@@ -248,6 +259,15 @@ final class AccountInspector implements ReceivingAccountCheck
         return ['currency' => (string) $amount['currency'], 'issuer' => (string) $amount['issuer']];
     }
 
+    /**
+     * XRPL currency codes: a three-character code is case-sensitive (`USD` and `usd` are two
+     * currencies); a 40-character hex code is the same in either letter case.
+     */
+    private static function sameCurrency(string $onLine, string $wanted): bool
+    {
+        return strlen($wanted) === 40 ? strcasecmp($onLine, $wanted) === 0 : $onLine === $wanted;
+    }
+
     private function isNative(string $asset): bool
     {
         foreach (ChainCatalog::chain($this->chain)->assets as $descriptor) {
@@ -273,6 +293,9 @@ final class AccountInspector implements ReceivingAccountCheck
     private function accountRoot(string $account, string $network, bool $fresh): ?array
     {
         $key = $this->key('root', $network, $account);
+        if (isset($this->read[$key])) {
+            return $this->read[$key]['root'];
+        }
         $cached = $fresh ? null : $this->cacheGet($key);
         if (is_array($cached) && array_key_exists('root', $cached)) {
             return $cached['root'];
@@ -281,6 +304,9 @@ final class AccountInspector implements ReceivingAccountCheck
         $root = $this->client->accountInfo($account, $network);
         // "Not activated" is cached too: a checkout render must not ask the node for it each time.
         $this->cacheSet($key, ['root' => $root], $this->cacheTtlSeconds);
+        if ($this->read !== null) {
+            $this->read[$key] = ['root' => $root];
+        }
 
         return $root;
     }
@@ -291,6 +317,9 @@ final class AccountInspector implements ReceivingAccountCheck
     private function accountLines(string $account, string $network, bool $fresh): array
     {
         $key = $this->key('lines', $network, $account);
+        if (isset($this->read[$key])) {
+            return $this->read[$key]['lines'];
+        }
         $cached = $fresh ? null : $this->cacheGet($key);
         if (is_array($cached) && isset($cached['lines']) && is_array($cached['lines'])) {
             return $cached['lines'];
@@ -298,6 +327,9 @@ final class AccountInspector implements ReceivingAccountCheck
 
         $lines = $this->client->accountLines($account, $network);
         $this->cacheSet($key, ['lines' => $lines], $this->cacheTtlSeconds);
+        if ($this->read !== null) {
+            $this->read[$key] = ['lines' => $lines];
+        }
 
         return $lines;
     }

@@ -98,7 +98,8 @@ final class AccountInspector implements ReceivingAccountCheck
 
             $issuer = $this->registry->issuer($asset, $network);
             $context = ['issuer' => $issuer];
-            $trustline = $this->trustline($account, $asset, $issuer, $network);
+            // From the record just read: no second Horizon call that could throw, no stale cache.
+            $trustline = self::trustlineIn($record, $asset, $issuer);
 
             if ($trustline === null) {
                 $findings[] = new Finding(Finding::TRUSTLINE_MISSING, $asset, true, $context);
@@ -126,8 +127,14 @@ final class AccountInspector implements ReceivingAccountCheck
      */
     public function trustline(string $account, string $assetCode, string $issuer, string $network): ?Trustline
     {
-        $record = $this->accountRecord($account, $network);
+        return self::trustlineIn($this->accountRecord($account, $network), $assetCode, $issuer);
+    }
 
+    /**
+     * @param array<string, mixed>|null $record Horizon's account record
+     */
+    private static function trustlineIn(?array $record, string $assetCode, string $issuer): ?Trustline
+    {
         foreach ($record['balances'] ?? [] as $balance) {
             if (($balance['asset_code'] ?? null) === $assetCode && ($balance['asset_issuer'] ?? null) === $issuer) {
                 return new Trustline(
@@ -145,8 +152,8 @@ final class AccountInspector implements ReceivingAccountCheck
 
     /**
      * Whether the account can receive $amount of the asset right now:
-     * trust line present, authorized, and the limit leaves room. Pass no
-     * amount to check the trust line alone.
+     * trust line present, authorized, and the limit leaves room. Without an
+     * amount, any room at all: a full line can receive nothing (op_line_full).
      */
     public function canReceive(string $account, string $assetCode, string $issuer, string $network, ?string $amount = null): bool
     {
@@ -156,7 +163,9 @@ final class AccountInspector implements ReceivingAccountCheck
             return false;
         }
 
-        return $amount === null || BigDecimal::of($trustline->headroom())->isGreaterThanOrEqualTo(BigDecimal::of($amount));
+        $room = BigDecimal::of($trustline->headroom());
+
+        return $amount === null ? $room->isPositive() : $room->isGreaterThanOrEqualTo(BigDecimal::of($amount));
     }
 
     /**

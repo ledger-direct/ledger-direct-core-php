@@ -151,6 +151,32 @@ final class AccountInspectorTest extends TestCase
         self::assertSame([Finding::NOT_CHECKED], array_column($inspector->assess(StellarFixtures::MERCHANT, 'testnet', ['XLM', 'USDC'])->findings, 'code'));
     }
 
+    public function testAFullTrustLineCannotReceiveEvenWithoutAnAmount(): void
+    {
+        $record = StellarFixtures::json('horizon/merchant-account.json');
+        foreach ($record['balances'] as &$balance) {
+            if (($balance['asset_code'] ?? null) === 'TESTUSD') {
+                $balance['limit'] = $balance['balance'];
+            }
+        }
+        unset($balance);
+        $client = new FakeHttpClient();
+        $client->queueResponse('/accounts/' . StellarFixtures::MERCHANT, new Response(200, [], (string) json_encode($record)));
+
+        self::assertFalse($this->inspector($client)->canReceive(StellarFixtures::MERCHANT, 'TESTUSD', StellarFixtures::PAYER, 'testnet'), 'op_line_full');
+    }
+
+    public function testAssessReadsHorizonOnceWithoutACache(): void
+    {
+        $client = new FakeHttpClient();
+        $client->queueResponse('/accounts/' . StellarFixtures::MERCHANT, StellarFixtures::response('horizon/merchant-account.json'));
+
+        $assessment = $this->inspector($client)->assess(StellarFixtures::MERCHANT, 'testnet', ['XLM', 'USDC', 'EURC']);
+
+        self::assertSame(['USDC', 'EURC'], array_column($assessment->findings, 'asset'));
+        self::assertCount(1, $client->sentRequests());
+    }
+
     private function inspector(FakeHttpClient $client, ?InMemoryCache $cache = null): AccountInspector
     {
         return new AccountInspector(new HorizonClient($client, new HttpFactory()), new RecordingLogger(), $cache);

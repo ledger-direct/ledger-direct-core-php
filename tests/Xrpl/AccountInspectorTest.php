@@ -201,6 +201,31 @@ final class AccountInspectorTest extends TestCase
         self::assertSame(1, $node->count('server_state'), 'the reserve is cached');
     }
 
+    public function testAFreshAssessmentUsesWhatItReadEvenWhenTheCacheRefusesIt(): void
+    {
+        // The checkout's cache still holds the account without trust lines …
+        $cache = new InMemoryCache(new FrozenClock());
+        $stale = $this->inspector($this->testnet()->answer('account_lines ' . self::MERCHANT, 'bare-account-lines.json'), cache: $cache);
+        self::assertFalse($stale->offers(self::MERCHANT, 'RLUSD', 'testnet'));
+
+        // … the merchant adds them, the cache stops taking writes, the configuration screen reads afresh.
+        $cache->failOn('set');
+        $node = $this->testnet();
+        $assessment = $this->inspector($node, cache: $cache)->assess(self::MERCHANT, 'testnet', self::ALL);
+
+        self::assertTrue($assessment->isClean(), implode(', ', self::codes($assessment)));
+        self::assertSame(1, $node->count('account_lines'));
+    }
+
+    public function testAHexCurrencyCodeMatchesInEitherLetterCase(): void
+    {
+        $lines = FakeNode::result('merchant-account-lines.json');
+        $lines['lines'][0]['currency'] = strtolower($lines['lines'][0]['currency']);
+        $inspector = $this->inspector($this->testnet()->answer('account_lines ' . self::MERCHANT, $lines));
+
+        self::assertNotNull($inspector->trustline(self::MERCHANT, 'RLUSD', 'testnet'));
+    }
+
     public function testXahauAsksItsOwnNodeForItsOwnReserve(): void
     {
         $node = (new FakeNode())

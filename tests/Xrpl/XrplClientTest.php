@@ -150,18 +150,23 @@ final class XrplClientTest extends TestCase
         self::assertSame('rBMBL9zS34zGeVUSk9fHAZLQvL24RuC3WY', $root['Account'] ?? null);
     }
 
-    public function testAccountLinesFollowsTheMarkerAndStops(): void
+    public function testAccountLinesFollowsTheMarkerOnTheFirstPagesLedgerAndStops(): void
     {
         $node = new class implements ClientInterface {
             public int $calls = 0;
+
+            /** @var list<mixed> */
+            public array $ledgers = [];
 
             public function sendRequest(RequestInterface $request): ResponseInterface
             {
                 $this->calls++;
                 $params = json_decode((string) $request->getBody(), true)['params'][0];
+                $this->ledgers[] = $params['ledger_index'];
+                // A new ledger validates between the pages; the second page must not follow it.
                 $result = isset($params['marker'])
-                    ? ['status' => 'success', 'lines' => [['account' => 'rB', 'currency' => 'USD']]]
-                    : ['status' => 'success', 'lines' => [['account' => 'rA', 'currency' => 'USD']], 'marker' => 'next'];
+                    ? ['status' => 'success', 'ledger_index' => 101, 'lines' => [['account' => 'rB', 'currency' => 'USD']]]
+                    : ['status' => 'success', 'ledger_index' => 100, 'lines' => [['account' => 'rA', 'currency' => 'USD']], 'marker' => 'next'];
 
                 return new Response(200, [], (string) json_encode(['result' => $result]));
             }
@@ -171,6 +176,7 @@ final class XrplClientTest extends TestCase
 
         self::assertSame(['rA', 'rB'], array_column($lines, 'account'));
         self::assertSame(2, $node->calls);
+        self::assertSame(['validated', 100], $node->ledgers);
     }
 
     public function testAccountLinesGivesUpOnANodeThatNeverEnds(): void
