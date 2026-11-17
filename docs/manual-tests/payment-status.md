@@ -196,6 +196,54 @@ transaction the merchant closed.
 
 Evidence: order number; the payload with `redirect` and its `state`.
 
+## PS-13 — Receiving account without trust lines
+
+*Contract: "Receiving account — can it take the payment?" — an issued asset the account cannot
+take is not offered; the configuration says why.*
+
+PS-13 to PS-15 leave the general precondition on purpose: the receiving account is in a state a
+merchant's real account is often in on mainnet and a prepared test account never is. Put the
+shop's own account back afterwards.
+
+1. Configure the shop with an **activated** account that has **no trust lines** (a fresh faucet
+   account), all assets enabled.
+2. Open the checkout as a customer; open the plugin's configuration.
+
+Expected: the checkout offers the native asset and **no** issued asset; the configuration shows,
+next to each issued asset that is switched on, that the trust line to its issuer is missing. The
+options stay visible and switchable.
+
+Evidence: the account; the list of payment methods; the configuration's message per asset.
+
+## PS-14 — Receiving account not activated
+
+*Contract: as PS-13; on XRPL and Xahau the first payment from the base reserve up activates the
+account, on Stellar a payment never creates its destination.*
+
+1. Configure the shop with an address **nobody has funded** (a generated key, not sent to the
+   faucet).
+2. Open the checkout; open the configuration.
+
+Expected: XRPL and Xahau — the checkout offers the native asset only; Stellar — the checkout
+offers nothing. The configuration says the account is not activated (with the base reserve on
+XRPL and Xahau).
+
+Evidence: the address; the list of payment methods; the configuration's message.
+
+## PS-15 — Deposit authorization on the receiving account
+
+*Contract: as PS-13; `DepositAuth` is a warning only, since business flows with pre-authorized
+senders are possible. XRPL and Xahau only.*
+
+1. Configure the shop with an activated account **with** trust lines on which deposit
+   authorization is set (`AccountSet` with `asfDepositAuth`).
+2. Open the checkout; open the configuration.
+
+Expected: the checkout offers every asset; the configuration warns that only pre-authorized
+senders can pay, and blocks nothing.
+
+Evidence: the account; the hash of the `AccountSet`; the list of payment methods; the warning.
+
 ---
 
 ## Coverage per platform
@@ -203,6 +251,7 @@ Evidence: order number; the payload with `redirect` and its `state`.
 | Case | PrestaShop | Shopware | WooCommerce | Magento |
 |---|---|---|---|---|
 | PS-01 … PS-11 | PR #9, #10 | PR #16, #17 (`tests/Manual/payment-status.md`) | — | PR #11 (`docs/manual-tests/payment-status.md`) |
+| PS-13 … PS-15 | — | PR #83 (harness `ld-e2e`, PS-13…15) | — | — |
 
 Fill in the PR that demonstrated the cases; a dash means the adapter does not implement the
 contract yet.
