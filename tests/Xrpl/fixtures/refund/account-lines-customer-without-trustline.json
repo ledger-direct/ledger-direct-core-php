@@ -1,0 +1,10 @@
+{
+  "result": {
+    "account": "rD8GY2xd9q8aRtfYqBWdngj2TsF2wL5Jnk",
+    "ledger_hash": "802D1E7EEB746AA8049CBEBF319556D4362BB5801658E23134C2D3A3EEBBFF5D",
+    "ledger_index": 22475010,
+    "lines": [],
+    "status": "success",
+    "validated": true
+  }
+}
