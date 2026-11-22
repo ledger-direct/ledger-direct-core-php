@@ -7,6 +7,7 @@ namespace Hardcastle\LedgerDirect\Core\Xrpl;
 use Hardcastle\LedgerDirect\Core\Clock\SystemClock;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentStatus;
 use Hardcastle\LedgerDirect\Core\Sync\LedgerSyncInterface;
+use InvalidArgumentException;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
@@ -44,6 +45,10 @@ final class SyncThrottle
     /**
      * @param string $chain part of the key: the same account can exist on the XRP Ledger and on
      *     Xahau, and one chain's sync must not hold back the other's
+     * @param string $purpose a second key space for another kind of sync of the same account
+     *     (`refund`: the look for a refund's execution must not be held back by the payment
+     *     sync a moment before, nor hold that one back). Empty for the payment sync, whose keys
+     *     stay as they were. Letters and digits only.
      */
     public function __construct(
         private readonly CacheInterface $cache,
@@ -51,7 +56,12 @@ final class SyncThrottle
         private readonly int $intervalSeconds = PaymentStatus::MIN_SYNC_INTERVAL_SECONDS,
         ?ClockInterface $clock = null,
         private readonly string $chain = 'XRPL',
+        private readonly string $purpose = '',
     ) {
+        if ($purpose !== '' && preg_match('/^[a-z0-9]{1,8}$/', $purpose) !== 1) {
+            throw new InvalidArgumentException("A sync throttle's purpose is up to eight lower-case letters or digits, got '{$purpose}'.");
+        }
+
         $this->clock = $clock ?? new SystemClock();
     }
 
@@ -114,6 +124,11 @@ final class SyncThrottle
 
     private function key(string $network, string $account): string
     {
-        return implode('.', [self::KEY_PREFIX, strtolower($this->chain), $network, substr(hash('sha256', $account), 0, 16)]);
+        $parts = [self::KEY_PREFIX, strtolower($this->chain), $network, substr(hash('sha256', $account), 0, 16)];
+        if ($this->purpose !== '') {
+            $parts[] = $this->purpose;
+        }
+
+        return implode('.', $parts);
     }
 }

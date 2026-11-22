@@ -54,6 +54,9 @@ final class RefundService
     /** A token value keeps 16 significant digits on the ledger; more would not arrive as asked. */
     private const MAX_TOKEN_DIGITS = 16;
 
+    /** How long one process holds the right to book an execution on the platform, by default. */
+    public const BOOKING_CLAIM_SECONDS = 120;
+
     /** Pages of the paying account's transactions a preview reads to look for an earlier payment. */
     private const PRIOR_PAYMENT_PAGES = 2;
 
@@ -316,6 +319,120 @@ final class RefundService
         }
 
         throw self::refusal(RefundNotice::CONFLICT);
+    }
+
+    /**
+     * Takes the right to book an executed refund on the platform — change the order's state,
+     * write it on the order — for $seconds. A status request and a scheduled task can find the
+     * same execution at the same moment; only one of them gets the refund back from here, and
+     * only that one acts.
+     *
+     * The order is: claimBooking(), the platform's own action, markBooked(). If the action
+     * fails, releaseBooking() lets the next run try again at once; a process that dies in
+     * between is replaced when its claim runs out.
+     *
+     * @return Refund|null the refund holding the claim; null when it is not executed, already
+     *     booked, or claimed by somebody else
+     */
+    public function claimBooking(string $id, int $seconds = self::BOOKING_CLAIM_SECONDS): ?Refund
+    {
+        $now = $this->now();
+        $refund = $this->refunds->find($id);
+
+        if ($refund === null || !$refund->isExecuted() || $refund->isBooked()
+            || ($refund->bookingClaimedUntil !== null && $refund->bookingClaimedUntil > $now)
+        ) {
+            return null;
+        }
+
+        $claimed = $refund->withBookingClaim($now + $seconds);
+
+        // Two that try at once both read the same version; storage lets one of them through.
+        return $this->refunds->update($claimed, $refund->version) ? $claimed : null;
+    }
+
+    /**
+     * The platform has taken note of the execution.
+     *
+     * @param Refund $claimed what claimBooking() returned
+     * @param string|null $note what the platform did, e.g. "refunded" or "booked, state unchanged"
+     * @return Refund|null the booked refund, as stored (with whatever was added to it since the
+     *     claim); null when the claim had run out and somebody else took over, in which case
+     *     nothing is stored and the other one books
+     */
+    public function markBooked(Refund $claimed, ?string $note = null): ?Refund
+    {
+        for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
+            $current = $this->stillClaimedBy($claimed);
+            if ($current === null) {
+                return null;
+            }
+
+            $booked = $current->booked($this->now(), $note);
+            if ($this->refunds->update($booked, $current->version)) {
+                return $booked;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Gives a claim back because the platform's action failed: the next run may try at once.
+     */
+    public function releaseBooking(Refund $claimed): void
+    {
+        for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
+            $current = $this->stillClaimedBy($claimed);
+            if ($current === null || $this->refunds->update($current->withBookingClaim($this->now()), $current->version)) {
+                return;
+            }
+        }
+    }
+
+    /**
+     * The refund as it is stored now, if the claim that was handed out still stands on it.
+     *
+     * The claim is recognised by its deadline, not by the refund's version: a finding added
+     * while the platform acted raises the version and leaves the claim where it was. Booking
+     * against the old version would be refused, the action would count as not recorded, and
+     * the next run would repeat it.
+     */
+    private function stillClaimedBy(Refund $claimed): ?Refund
+    {
+        $current = $this->refunds->find($claimed->id);
+
+        if ($current === null || $current->isBooked() || $claimed->bookingClaimedUntil === null
+            || $current->bookingClaimedUntil !== $claimed->bookingClaimedUntil
+        ) {
+            return null;
+        }
+
+        return $current;
+    }
+
+    /**
+     * The executed refunds on this network that no process has booked yet, among those still
+     * looked after (RefundReconciler::GRACE_SECONDS after their execution). What a scheduled
+     * task goes through after its pass: an execution found by a request that died before
+     * booking it is picked up here.
+     *
+     * @return list<Refund>
+     */
+    public function awaitingBooking(string $network): array
+    {
+        $closedSince = $this->now() - RefundReconciler::GRACE_SECONDS;
+        $refunds = [];
+
+        foreach ($this->refunds->watchedAccounts($network, $closedSince) as $account) {
+            foreach ($this->refunds->findWatched($network, $account, $closedSince) as $refund) {
+                if ($refund->isExecuted() && !$refund->isBooked()) {
+                    $refunds[] = $refund;
+                }
+            }
+        }
+
+        return $refunds;
     }
 
     public function find(string $id): ?Refund

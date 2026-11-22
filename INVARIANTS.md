@@ -204,7 +204,8 @@ https://xrplf.org//send?to=<account>&dt=<tag>[&amount=<amount>][&currency=<hex>&
   platform whose wallets have not been verified; it is the safe default for an unverified wallet,
   since a wrong unit is a money error.
 - Parameters are RFC 3986-encoded; the order is `to`, `dt`, `amount`, `currency`, `issuer`,
-  `network`.
+  `network`. A refund's request (`forRefund()`, see [Refund](#refund)) comes from the same
+  builder: `dt` only when the refund has a tag, and `invoiceid` before `network`.
 - `network` always, last: Xaman's key (`MAINNET`, `TESTNET` on the XRP Ledger; `XAHAU`,
   `XAHAUTESTNET` on Xahau). Without it Xaman pays the request on whichever network it is on, and
   the r-address is valid on both chains: scanned while Xaman was on Xahau, an XRP request opened
@@ -246,6 +247,318 @@ validators vote on it and the chains differ. The trust line is the one to the re
 for the asset's currency (`StablecoinRegistry`); a line to any other issuer does not count.
 Background and the decisions: `Documentation/Mainnet-Testing.md` (K3) in the LedgerDirect
 documentation.
+
+## Refund
+
+Paying a customer back, on the XRP Ledger and on Xahau. Since 0.13.0; additive — a platform that
+passes no refund repository to `LedgerDirect::create()` notices nothing.
+
+**LedgerDirect never sends.** The core holds no key and submits no transaction. A refund is a
+payment *request*: the merchant signs it in their own wallet, the core finds the outgoing payment
+on the ledger afterwards, and only then is the refund executed. Nothing on a platform is booked
+before that. This is the same custody rule as for payments, read in the other direction.
+
+Two things must never happen, and every rule below serves one of them:
+
+1. **Money arrives and belongs to nobody.** An account at an exchange is shared by its customers
+   and told apart by the destination tag; a payment without the right tag is there and cannot be
+   credited.
+2. **Money leaves the merchant's account unnoticed.** Paid twice, paid after cancelling, paid in
+   another amount, paid by hand before the refund existed.
+
+What the ledger would refuse anyway (no trust line, an account that requires a tag and gets none,
+an account that does not exist) costs a fee and loses nothing. The core checks for it to spare the
+merchant the attempt; it is help, not protection.
+
+Services: `Xrpl\RefundService` (preview, create, cancel, attach, booking),
+`Xrpl\RefundReconciler` (finds the payments), `Xrpl\ReceivedPayments` (what an order received and
+what can still go back). Record: `Refund\Refund`. Port: `Port\RefundRepositoryInterface`. All take
+the chain like the other XRPL classes; a shop on both chains holds two roots.
+
+### The record
+
+`Refund\Refund`, schema version 1, immutable; a change is a new instance with `version` raised
+by one. Three states: `awaiting_execution` → `executed` or `cancelled`; a cancelled refund can
+still become `executed`, because a payment that happened is not undone by what the request said.
+
+A refund always belongs to **one incoming payment** (`source_hash`): it goes back in that
+payment's asset, and never exceeds what that payment delivered. `paying_account` is the account
+the source payment went to — not whatever the shop is configured with today.
+
+It is stored as a row, one column per field (`Refund::toRow()`, `fromRow()`, `Refund::COLUMNS`),
+so the table reads at a glance. Five columns are plain text from the record's constants, never
+numbers and never a database ENUM:
+
+| Column | Values |
+|---|---|
+| `status` | `awaiting_execution`, `executed`, `cancelled` |
+| `purpose` | `order_refund`, `surplus_return`, `wrong_asset_return` |
+| `destination_origin` | `sender`, `stated` |
+| `matched_by` | `key`, `reference`, `attached`; null while not executed |
+| `deviation` | empty, or `other_account`, `amount`, `after_cancel`, comma-separated in that order |
+
+`deviation <> ''` finds every execution that differs from its request; `paying_account` next to
+`executed_account` and `amount` next to `delivered_amount` show how. Amounts are decimal strings
+(`Xrpl\LedgerAmount`), never a float in the record and never a numeric column. A null
+`asset_issuer` marks the native asset. `fromRow()` reads strictly: an unknown status, a damaged
+`findings` column or a missing column is refused, not half read.
+
+**Purpose** is decided by what the source payment is, not chosen freely
+(`Xrpl\ReceivedPayments`):
+
+- a payment in **another asset** than the quoted one can only be returned as it came
+  (`wrong_asset_return`);
+- a payment in the **quoted asset** can be refunded for the order (`order_refund`), up to what it
+  still has to give;
+- if more arrived in the quoted asset than was asked, the excess can go back without touching the
+  order (`surplus_return`), up to the excess.
+
+Only `order_refund` is meant to change an order's state on a platform. Whether an order is
+refunded in part or in full is decided **in tokens** — executed `order_refund`s against what
+counted for the order (`PaymentOverview::$orderRefundState`) — not against the order's value in
+the shop's currency, which can change after the payment.
+
+### The destination and its tag
+
+A destination has an origin: `sender` (the account the source payment came from) or `stated` (an
+address the customer named and the merchant entered).
+
+**No refund without a destination tag unless somebody vouches for the address.** Whether an
+address is a shared account cannot be read from the ledger with certainty, so "no tag" is never
+the default. `RefundDestination` cannot be built without a tag unless it carries an attestation
+(`own_wallet`: the merchant confirmed that the customer called the address their own wallet).
+
+| Destination | Without a tag |
+|---|---|
+| The sender, and the sender's account requires a destination tag (`lsfRequireDestTag`) | **refused** (`sender_may_be_shared`, reason `requires_tag`) |
+| The sender, and the source payment carried a `SourceTag` | **refused** (reason `source_tag`; the tag is offered as a question for the customer) |
+| The sender, and the source payment cannot be read from the ledger | **refused** (reason `source_unreadable`): unknown is not "had none" |
+| Any account that requires a destination tag | **refused** (`tag_required`) |
+| Anything else | only with the merchant's confirmation (`confirmation_required` until then) |
+
+- The rule for the sender holds **whether the sender's address was taken from the payment or
+  typed in** as a stated destination. Typing it is not a way around it.
+- The sender's address is **never combined with a tag somebody typed**: the account an exchange
+  pays out from is often not the one it takes deposits on. Address and tag come together, from
+  the customer, as a stated destination.
+- A `SourceTag` is, by the ledger's convention, the tag a refund should carry. The core **shows**
+  it (`RefundPreview::$sourceTag`) and never uses it on its own: whether the sender follows the
+  convention is not on the ledger, and a wrong tag at a shared account credits a stranger.
+- A typed tag is typed twice (`destinationTag`, `destinationTagRepeat`) and compared by the core.
+  An address carries a checksum; a tag does not.
+- **No tag is not tag 0**, anywhere: in the record (`null`), in the row (SQL `NULL`), in the
+  open key, in the payment request (no `dt` at all), in matching.
+- Refused outright: the paying account itself as destination; the token's issuer as destination;
+  an address whose checksum fails.
+
+The account is asked afresh for every preview and every creation (`Xrpl\RefundDestinationCheck`,
+no cache): a five-minute-old answer to "does this account require a tag" is not an answer. With
+the node unreachable nothing is created (`ledger_unavailable`).
+
+### The amount
+
+A request names its amount in exactly one way: in tokens, in the shop's currency, or "everything".
+
+- **Limit.** Per source payment: delivered, minus what executed refunds *delivered*, minus what
+  open requests ask for. A cancelled refund claims nothing.
+- **Shop currency**, for a payment in the quoted asset only (the quote's rate says nothing
+  about another asset). `refund × requested tokens ÷ order value`, exact, rounded **up** to the
+  asset's quote precision (`Refund\RefundAmount`). 80.00 paid as 86.40 USDC, 20.00 back:
+  21.60. Not "refund ÷ stored rate" — the rate in the record is a float. The platform supplies
+  the order value (the record has none); the core accepts it only if quoting it again at the
+  stored rate gives exactly the requested amount, and otherwise asks for tokens
+  (`fiat_basis_mismatch`). When rounding up would push the last refund over what is left, the
+  limit wins; a share that exceeds it even rounded down is refused.
+- **Everything** is the exact remainder, never derived from the shop's currency.
+- The refund is in the **received** asset, also when the customer paid through the ledger's
+  exchange and spent another one (`paid_across_assets`): whether they can take it back is a
+  question for their trust lines, answered afresh.
+
+Two simultaneous requests for one payment cannot both fit under it: each takes the next `serial`
+for that payment from the same reading its limit was computed from, `(network, source_hash,
+serial)` is unique, and the one that loses reads again. And once a refund is stored the core
+looks again: if its payment, or the order's excess, is then asked for more than there is —
+another refund executed in a larger amount meanwhile, a surplus return created at the same
+moment on another payment of the order — the new refund is withdrawn (stored as cancelled) and
+the request refused. Two that race may both be refused; never both stay.
+
+### The payment request
+
+`Core\Payment\PaymentUri::forRefund()`, the same form and the same builder as a customer's
+request:
+
+```
+https://xrplf.org//send?to=<destination>[&dt=<tag>]&amount=<amount>[&currency=<hex>&issuer=<address>]&invoiceid=<reference>&network=<key>
+```
+
+- Only a refund that awaits execution has a request (`RefundService::paymentUri()` is null for a
+  cancelled or executed one).
+- `dt` **only when the refund has a tag**.
+- `amount` always, exact.
+- `invoiceid` is the refund's **reference**, 64 hex digits. Xaman copies it into the payment's
+  `InvoiceID` field (scanned on both testnets on 2026-11-20, also together with a tag and a
+  token). Other wallets may not; a payment without it is matched by its key.
+- With an installation key the reference is derived
+  (`RefundService::deriveReference()`): HMAC-SHA256 over
+  `ledger-direct-refund-v1|<chain>|<network>|<source hash>|<serial>`. It can be computed again
+  from the payment a refund pays back, so executed refunds can be found on the ledger even if the
+  table were lost — and nobody without the key can compute which refund belongs to which
+  payment. Without a key the reference is random. A reference is unique per network.
+
+### Matching
+
+`Xrpl\RefundReconciler` reads the paying account's own transactions and holds every outgoing one
+against the account's refunds (`Xrpl\RefundMatcher`).
+
+A payment **executes** a refund only if all of this holds:
+
+- validated, result `tesSUCCESS`;
+- to the refund's destination, **with the refund's tag** (none means none);
+- in the refund's asset, in **exactly** the refund's amount — compared on `delivered_amount` as
+  decimals, never as floats, and never on the `Amount` field (a partial payment's `Amount` 5
+  delivered 1);
+- in a ledger **after** the one the refund was created in. The bound is the validated ledger
+  index at creation (`created_ledger`), not a clock.
+
+A payment that carries a refund's reference names **that refund and no other**: it executes it
+if everything above fits, and is a finding on it if not. **The reference never stands in for the
+tag or the amount.** Without a reference, the oldest open refund with the exact key is executed.
+
+No second open refund with the same paying account, destination, tag, asset and amount can exist
+(`open_key`, unique while the refund is open): a payment could not be told to belong to one or
+the other.
+
+Everything else that leaves the paying account for a refund's destination is a **finding** on
+the refund (`Refund\RefundFinding`, one per refund and transaction), kept and shown, never
+assumed to be the refund:
+
+| Finding | What happened |
+|---|---|
+| `tag_mismatch` | went to the destination without the refund's tag, or with another one |
+| `amount_mismatch` | the tag fits, the amount or the asset does not |
+| `destination_mismatch` | carries the refund's reference and went to another account |
+| `duplicate` | fits a refund that is executed already |
+| `after_cancel` | fits a refund that was cancelled |
+| `paid_before` | fits, but is from before the refund was created |
+| `unreadable` | a successful transaction whose delivered amount cannot be read (not a `Payment`; Xahau's `Remit`) |
+| `failed_attempt` | the ledger refused it; `result` says why (`tecDST_TAG_NEEDED`, `tecPATH_DRY`) |
+
+A refused payment is validated and in the **sender's** `account_tx`, never in the destination's
+(recorded on both testnets on 2026-11-20). It delivered nothing and the refund stays open.
+
+Looked after are the refunds awaiting execution and, for seven days
+(`RefundReconciler::GRACE_SECONDS`), those executed or cancelled. While an account is read at
+all, every outgoing transaction is held against all of its refunds to that destination.
+
+**Reading is strict.** The payment sync skips an entry it cannot read; here that entry could be
+the payment that left the account. An entry without hash, without `validated`, or validated
+without a result (`Xrpl\LedgerTransaction`), an answer without a transaction list, a node that
+does not answer, a page budget that runs out, a transaction that could not be stored because its
+refunds kept changing: the pass says `complete: false`, keeps what it found before, and concludes
+nothing from the rest. `lgrIdxsInvalid` changes no state; the payment sync's recovery after a
+testnet reset is not used.
+
+**"Read to the end" is a statement about ledgers, and only the answer can make it.** A pass is
+complete only if the `account_tx` answer says which ledgers it covers (`ledger_index_max`) and
+they reach the newest validated ledger, give or take the few ledgers two nodes of a pool differ
+by (`MAX_LAG_LEDGERS`, 20). An answer that ends earlier comes from a node that has not seen what
+happened since; "nothing found" there is not "nothing happened", and a refund is not cancelled
+on it.
+
+On a **test network**, a refund created far beyond the node's newest ledger is from another
+epoch of a network that was reset: it is reported (`unreachable`), not looked for, and can be
+cancelled. On mainnet nothing is ever written off like that; a node that far behind makes the
+pass incomplete.
+
+A page budget never stalls a pass for good: a pass that would end before it has read a single
+ledger to its end reads on until it has.
+
+Reading from "the ledger the refund was created in" means `ledger_index_min` equal to that
+index: a node serves `ledger_index_min` up to its newest validated ledger and answers
+`lgrIdxsInvalid` for the next one (recorded on both testnets).
+
+A pass is idempotent. The cursor it keeps in the cache saves reading and decides nothing, and
+it never goes further than the `account_tx` answers themselves say they went
+(`ledger_index_max`): the public endpoints are pools of nodes, and the one that answers
+`account_tx` may be a few ledgers behind the one that answered `server_state`.
+
+**Attaching.** A merchant can name the transaction that paid a refund
+(`RefundService::attach()`): one from another account of theirs, in another amount, from before
+the refund existed, or after it was cancelled. It must still be a validated, successful `Payment`
+to the refund's destination, with the refund's tag, in the refund's asset; what differs is
+written in `deviation`. One transaction executes one refund (`executed_hash` is unique).
+
+**Cancelling** reads the ledger first (`RefundService::cancel()`). A refund paid a moment ago
+comes back executed; and if the ledger cannot be read to the end, the refund is **not**
+cancelled — cancelling frees its amount for another refund while nobody knows whether the first
+was paid.
+
+**Before creating**, the preview shows what the paying account already sent to the destination
+since the source payment (`paid_before`), other than executions on record. That is advice, and
+the one protection that would still hold without the refund table.
+
+### Booking
+
+What an executed refund does on a platform — a state, a note on the order — is the adapter's
+business; that it happens **once** is the core's. `RefundService::claimBooking()` gives the
+refund to one caller for a limited time; the platform acts; `markBooked()` records it. A status
+request and a scheduled task that find the same execution at the same moment cannot both book
+it, and a process that died in between is replaced when its claim runs out.
+
+A claim is recognised by its deadline, not by the refund's version: a finding added to the
+refund while the platform acts does not make the booking fail.
+
+A claim is a lease, not a lock on the platform: a holder that is still working when its claim
+runs out is overtaken, and its `markBooked()` is then refused — after it may have acted. So what
+a platform does when it books must be safe to do twice (a state that is already set stays set,
+a note is written under the refund's id).
+
+### Tables
+
+`ledger_direct_xrpl_refund` and `ledger_direct_xahau_refund` (`Xrpl\RefundSchema`), an entry of
+its own: `Schema::tables()` still describes exactly the two tables it always did.
+
+- Four **unique indexes** carry the rules that two simultaneous requests could otherwise break,
+  and an implementation must hold them as indexes, never as a query followed by a write:
+  `(network, source_hash, serial)`, `open_key`, `executed_hash`, `(network, reference)`.
+- `update()` is `UPDATE … WHERE id = ? AND version = ?`.
+- `Testing\RefundRepositoryContractTestCase` is the contract as a test; an adapter's repository
+  extends it.
+- **The table is a record, not a cache.** It holds what is nowhere on the ledger: which order a
+  payment was for, its purpose, where the destination came from, who confirmed it, whether it
+  is booked. The transaction table can be emptied and synced again; this one cannot. Nothing
+  empties it — no sync, no testnet reset, no clean-up job — the port has no `truncate()`, and it
+  survives uninstall like the destination-tag counter. Lost, the limit of every payment would be
+  whole again.
+
+### What stays with the merchant
+
+Not everything can be prevented, and the contract says so:
+
+- An exchange's account that neither requires a tag nor sent a source tag, for which the
+  merchant confirms "own wallet" anyway.
+- A tag the customer got wrong. Nobody can check it.
+- An amount or destination the merchant changes in the wallet before signing. It is noticed (a
+  finding), not prevented.
+- A payment of **more** than the refund asked for, which the merchant then names as its
+  execution: the refund records what arrived (`deviation` `amount`), and the refunds of one
+  payment can then add up to more than it delivered. The limit governs what may be requested;
+  it cannot take back what was paid.
+- A user of the platform who enters their own address as the customer's. Every refund names
+  who created it (`created_by`; a request without it is not accepted); who may create one is
+  the platform's permission to give.
+
+### Known gaps
+
+- Stellar has no refunds yet.
+- A refund is always in the received asset; none in the asset a customer spent through the
+  ledger's exchange.
+- Refunds are not subtracted from what counts as paid: `SyncService::findFulfillmentFor()` and
+  `PaymentStatus` do not know them. A platform must not let a payment that arrives after an
+  order refund settle the order by itself.
+- No signing in the browser, no confirmation of the destination by the customer.
+- A token whose issuer charges a transfer fee: the request names the amount to deliver, and a
+  wallet that sets `SendMax` to the same amount cannot pay it (`transfer_fee` warns).
 
 ## Rate caching
 

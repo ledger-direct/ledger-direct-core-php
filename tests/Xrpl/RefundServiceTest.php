@@ -1310,6 +1310,155 @@ final class RefundServiceTest extends TestCase
         self::assertTrue($preview->has(RefundNotice::PRIOR_PAYMENTS_NOT_CHECKED), 'a payment the ledger no longer has says nothing about where to start');
     }
 
+    /* ---------- booking the execution on the platform ---------- */
+
+    /**
+     * A status request and the scheduled task find the same execution at the same moment. Only
+     * one of them gets the refund to book.
+     */
+    public function testOnlyOneProcessGetsToBookAnExecution(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $this->executedRefund($service, '40');
+
+        $claimed = $service->claimBooking($refund->id);
+
+        self::assertNotNull($claimed);
+        self::assertSame(self::NOW + RefundService::BOOKING_CLAIM_SECONDS, $claimed->bookingClaimedUntil);
+        self::assertNull($service->claimBooking($refund->id), 'the claim is held');
+
+        $booked = $service->markBooked($claimed, 'refunded partially');
+
+        self::assertTrue($booked?->isBooked());
+        self::assertSame(self::NOW, $booked?->bookedAt);
+        self::assertSame('refunded partially', $booked?->bookingNote);
+        self::assertEquals($booked, $service->find($refund->id));
+        self::assertNull($service->claimBooking($refund->id), 'a booked refund is not booked again');
+    }
+
+    /**
+     * A process that died between claiming and booking is replaced when its claim runs out —
+     * and if it comes back after all, its booking is not stored over the other one's.
+     */
+    public function testAClaimThatRanOutIsTakenOverAndTheLateBookingIsRefused(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $this->executedRefund($service, '40');
+
+        $first = $service->claimBooking($refund->id, 60);
+        $this->clock->advance(59);
+        self::assertNull($service->claimBooking($refund->id));
+
+        $this->clock->advance(1);
+        $second = $service->claimBooking($refund->id);
+        self::assertNotNull($first);
+        self::assertNotNull($second);
+
+        self::assertNull($service->markBooked($first, 'too late'));
+        self::assertFalse($service->find($refund->id)?->isBooked());
+        self::assertSame('refunded', $service->markBooked($second, 'refunded')?->bookingNote);
+    }
+
+    /**
+     * While the platform acts, the pass adds a finding to the refund: its version moves on, the
+     * claim stays. The booking is recorded on the refund as it is now — otherwise the action
+     * would count as not done and be repeated when the claim runs out.
+     */
+    public function testABookingIsRecordedAlthoughTheRefundChangedMeanwhile(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $this->executedRefund($service, '40');
+        $claimed = $service->claimBooking($refund->id) ?? self::fail('claim');
+
+        $finding = new \Hardcastle\LedgerDirect\Core\Refund\RefundFinding(
+            \Hardcastle\LedgerDirect\Core\Refund\RefundFinding::DUPLICATE,
+            self::hash('second payment'),
+            self::VALIDATED_LEDGER + 9,
+            self::MERCHANT,
+            self::CUSTOMER,
+            null,
+            $refund->amount,
+            'tesSUCCESS',
+            'Payment',
+            self::NOW,
+        );
+        self::assertTrue($this->refunds->update($claimed->withFinding($finding), $claimed->version));
+
+        $booked = $service->markBooked($claimed, 'refunded');
+
+        self::assertTrue($booked?->isBooked());
+        self::assertCount(1, $booked?->findings ?? [], 'the finding added meanwhile is kept');
+        self::assertEquals($booked, $service->find($refund->id));
+        self::assertNull($service->claimBooking($refund->id), 'and nobody books it again');
+    }
+
+    public function testAClaimIsGivenBackAlthoughTheRefundChangedMeanwhile(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $this->executedRefund($service, '40');
+        $claimed = $service->claimBooking($refund->id) ?? self::fail('claim');
+        // Any change that leaves the claim alone; here the claim record itself is re-stored.
+        $current = $this->refunds->find($refund->id) ?? self::fail('refund');
+        $finding = new \Hardcastle\LedgerDirect\Core\Refund\RefundFinding(
+            \Hardcastle\LedgerDirect\Core\Refund\RefundFinding::DUPLICATE, self::hash('second payment'), self::VALIDATED_LEDGER + 9,
+            self::MERCHANT, self::CUSTOMER, null, $refund->amount, 'tesSUCCESS', 'Payment', self::NOW,
+        );
+        $this->refunds->update($current->withFinding($finding), $current->version);
+
+        $service->releaseBooking($claimed);
+
+        self::assertNotNull($service->claimBooking($refund->id));
+    }
+
+    public function testAClaimGivenBackCanBeTakenAtOnce(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $this->executedRefund($service, '40');
+
+        $claimed = $service->claimBooking($refund->id);
+        self::assertNotNull($claimed);
+        $service->releaseBooking($claimed);
+
+        self::assertNotNull($service->claimBooking($refund->id));
+    }
+
+    public function testOnlyAnExecutedRefundCanBeClaimed(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $open = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+
+        self::assertNull($service->claimBooking($open->id));
+        self::assertNull($service->claimBooking(str_repeat('0', 32)));
+
+        $service->cancel($open->id);
+        self::assertNull($service->claimBooking($open->id));
+    }
+
+    /**
+     * What the scheduled task goes through after its pass: executed, not booked, still looked after.
+     */
+    public function testTheExecutedRefundsNobodyHasBookedYet(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $unbooked = $this->executedRefund($service, '10');
+        $booked = $this->executedRefund($service, '20');
+        $service->markBooked($service->claimBooking($booked->id) ?? self::fail('claim'), 'refunded');
+        $service->create($this->request(amount: '30', ownWalletConfirmed: true));
+
+        self::assertEquals([$service->find($unbooked->id)], $service->awaitingBooking('testnet'));
+        self::assertSame([], $service->awaitingBooking('mainnet'));
+
+        $this->clock->advance(604800 + 1);
+        self::assertSame([], $service->awaitingBooking('testnet'), 'after seven days nobody looks any more');
+    }
+
     /* ---------- Xahau ---------- */
 
     public function testXahauRefundsItsNativeAssetThroughItsOwnNodes(): void
@@ -1386,6 +1535,16 @@ final class RefundServiceTest extends TestCase
             reason: $reason,
             createdBy: $createdBy,
         );
+    }
+
+    /** A refund of payment A that the merchant paid and named. */
+    private function executedRefund(RefundService $service, string $amount): Refund
+    {
+        $refund = $service->create($this->request(amount: $amount, ownWalletConfirmed: true));
+        $name = 'execution-' . $refund->serial;
+        $this->node->answer('tx ' . self::hash($name), self::outgoingTx($name, self::CUSTOMER, (string) ((int) $amount * 1000000)));
+
+        return $service->attach($refund->id, self::hash($name));
     }
 
     private function assertRefused(string $code, RefundRequest $request): void
