@@ -12,10 +12,10 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 
 /**
- * Thin JSON-RPC transport for the two XRPL node calls the core needs
- * (`account_tx`, `tx`). Returns raw, undecoded ledger data — hydrating it
- * into domain objects (e.g. XrplTransaction) is a caller's job (SyncService),
- * not this class's.
+ * Thin JSON-RPC transport for the XRPL node calls the core needs
+ * (`account_tx`, `tx`, `account_info`, `account_lines`, `server_state`).
+ * Returns raw, undecoded ledger data — hydrating it into domain objects
+ * (e.g. XrplTransaction) is a caller's job (SyncService), not this class's.
  *
  * Also the transport for Xahau, which speaks the same protocol on its own
  * nodes: the chain picks the endpoint, nothing else changes.
@@ -222,6 +222,42 @@ final class XrplClient
      */
     public function reserves(string $network): array
     {
+        $ledger = $this->validatedLedger($network);
+        $base = self::drops($ledger['reserve_base'] ?? null);
+        $increment = self::drops($ledger['reserve_inc'] ?? null);
+        if ($base === null || $increment === null) {
+            throw new XrplRpcException("{$this->chain} server_state on {$network} carries no validated ledger reserves.");
+        }
+
+        return ['base' => $base, 'increment' => $increment];
+    }
+
+    /**
+     * The index of the newest ledger the node has validated. A mark taken from the ledger itself
+     * rather than from a clock: whatever happens on an account after this call is in a ledger
+     * with a higher index. `account_tx` serves `ledger_index_min` up to exactly this index and
+     * answers `lgrIdxsInvalid` for the next one (recorded on both testnets, 2026-11-20), so a
+     * caller that reads "from this ledger on" passes this index minus one to
+     * fetchAccountTransactions(), which asks for the ledger after the one it is given.
+     */
+    public function validatedLedgerIndex(string $network): int
+    {
+        $index = $this->validatedLedger($network)['seq'] ?? null;
+        if (!is_int($index) || $index < 1) {
+            throw new XrplRpcException("{$this->chain} server_state on {$network} carries no validated ledger index.");
+        }
+
+        return $index;
+    }
+
+    /**
+     * `state.validated_ledger` of `server_state`; empty when the node reports none (it is still
+     * syncing), which each caller turns into its own error.
+     *
+     * @return array<string, mixed>
+     */
+    private function validatedLedger(string $network): array
+    {
         $result = $this->callRpc($network, 'server_state', []);
 
         if (($result['status'] ?? null) === 'error') {
@@ -229,13 +265,8 @@ final class XrplClient
         }
 
         $ledger = $result['state']['validated_ledger'] ?? null;
-        $base = is_array($ledger) ? self::drops($ledger['reserve_base'] ?? null) : null;
-        $increment = is_array($ledger) ? self::drops($ledger['reserve_inc'] ?? null) : null;
-        if ($base === null || $increment === null) {
-            throw new XrplRpcException("{$this->chain} server_state on {$network} carries no validated ledger reserves.");
-        }
 
-        return ['base' => $base, 'increment' => $increment];
+        return is_array($ledger) ? $ledger : [];
     }
 
     /** A drops amount as a digit string, or null when the value is not one. */
