@@ -63,7 +63,11 @@ final class XrplClient
     }
 
     /**
-     * @return array{transactions: list<array<string, mixed>>, marker: string|array|null}
+     * @return array{transactions: list<array<string, mixed>>, marker: string|array|null, ledger_index_max: int|null}
+     *     `ledger_index_max` is the newest ledger the answering node covered, as the answer
+     *     states it; null when it does not. The public endpoints are pools of nodes, and the
+     *     one that answers this call may be a few ledgers behind the one that answered
+     *     `server_state`: only this number says how far *this* answer goes.
      */
     public function fetchAccountTransactions(
         string $address,
@@ -96,9 +100,18 @@ final class XrplClient
             );
         }
 
+        // An answer without the list is not an empty page: nothing can be concluded from it.
+        $transactions = $result['transactions'] ?? null;
+        if (!is_array($transactions) || !array_is_list($transactions)) {
+            throw new XrplRpcException("{$this->chain} account_tx on {$network} returned no transaction list.");
+        }
+
+        $max = $result['ledger_index_max'] ?? null;
+
         return [
-            'transactions' => $result['transactions'] ?? [],
+            'transactions' => $transactions,
             'marker' => $result['marker'] ?? null,
+            'ledger_index_max' => is_int($max) && $max >= 0 ? $max : null,
         ];
     }
 
