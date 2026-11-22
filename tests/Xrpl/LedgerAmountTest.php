@@ -126,6 +126,9 @@ final class LedgerAmountTest extends TestCase
             "the ledger's marker for an unknown delivered amount" => ['unavailable'],
             'negative drops' => ['-5'],
             'drops with a fraction' => ['1.5'],
+            // `$` would let a final newline through; the whole string has to be digits.
+            'drops followed by a newline' => ["1070000\n"],
+            'a hex currency code followed by a newline' => [['currency' => self::RLUSD . "\n", 'issuer' => self::ISSUER, 'value' => '1']],
             'an empty string' => [''],
             'a float' => [1.5],
             'no issuer' => [['currency' => 'USD', 'value' => '1']],

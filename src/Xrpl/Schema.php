@@ -120,9 +120,22 @@ final class Schema
      */
     public static function mysql(string $prefix = '', string $engine = 'InnoDB', string $charset = 'utf8mb4', string $chain = 'XRPL'): array
     {
+        return self::mysqlFor(self::tables($chain), $prefix, $engine, $charset);
+    }
+
+    /**
+     * The MySQL DDL for any tables described in tables()'s shape; RefundSchema renders its
+     * own through this.
+     *
+     * @internal
+     * @param array<string, array{columns: list<array<string, mixed>>, primary: list<string>, unique: array<string, list<string>>, indexes: array<string, list<string>>}> $tables
+     * @return list<string>
+     */
+    public static function mysqlFor(array $tables, string $prefix, string $engine, string $charset): array
+    {
         $statements = [];
 
-        foreach (self::tables($chain) as $table => $definition) {
+        foreach ($tables as $table => $definition) {
             $lines = [];
 
             foreach ($definition['columns'] as $column) {

@@ -327,6 +327,8 @@ final class LedgerTransactionTest extends TestCase
             'no tx object' => [$without('tx')],
             'no hash' => [$without('tx', 'hash')],
             'a hash that is not one' => [$with('hash', 'ABC123')],
+            'a hash followed by a newline' => [$with('hash', str_repeat('A', 64) . "\n")],
+            'an invoice id followed by a newline' => [$with('InvoiceID', str_repeat('A', 64) . "\n")],
             'no validated flag' => [$without('validated')],
             'validated without meta' => [$without('meta')],
             'validated without a result' => [$without('meta', 'TransactionResult')],

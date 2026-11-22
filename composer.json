@@ -24,7 +24,7 @@
         "guzzlehttp/guzzle": "^7.9"
     },
     "suggest": {
-        "phpunit/phpunit": "Required by Hardcastle\\LedgerDirect\\Core\\Testing\\XrplTransactionRepositoryContractTestCase, the contract test for adapter repository implementations"
+        "phpunit/phpunit": "Required by the contract tests for adapter repository implementations in Hardcastle\\LedgerDirect\\Core\\Testing (XrplTransactionRepositoryContractTestCase, StellarPaymentRepositoryContractTestCase, RefundRepositoryContractTestCase)"
     },
     "autoload": {
         "psr-4": {

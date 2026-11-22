@@ -146,7 +146,7 @@ final readonly class LedgerTransaction
     private static function read(array $fields, mixed $meta, mixed $validated): self
     {
         $hash = $fields['hash'] ?? null;
-        if (!is_string($hash) || preg_match('/^[0-9A-Fa-f]{64}$/', $hash) !== 1) {
+        if (!is_string($hash) || preg_match('/^[0-9A-Fa-f]{64}\z/', $hash) !== 1) {
             throw self::unusable(null, 'no transaction hash');
         }
         $hash = strtoupper($hash);
@@ -179,7 +179,7 @@ final readonly class LedgerTransaction
 
         $invoiceId = $fields['InvoiceID'] ?? null;
         if ($invoiceId !== null) {
-            if (!is_string($invoiceId) || preg_match('/^[0-9A-Fa-f]{64}$/', $invoiceId) !== 1) {
+            if (!is_string($invoiceId) || preg_match('/^[0-9A-Fa-f]{64}\z/', $invoiceId) !== 1) {
                 throw self::unusable($hash, 'its InvoiceID is not 64 hex digits');
             }
             $invoiceId = strtoupper($invoiceId);
