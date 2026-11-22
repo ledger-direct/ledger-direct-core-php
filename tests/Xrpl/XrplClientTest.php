@@ -199,6 +199,51 @@ final class XrplClientTest extends TestCase
         self::assertStringContainsString('"params":[{}]', (string) $client->lastRequest()?->getBody());
     }
 
+    public function testTheValidatedLedgerIndexComesFromServerState(): void
+    {
+        $node = (new FakeNode())->answer('server_state', 'server-state.json');
+
+        self::assertSame(22396432, (new XrplClient($node, new HttpFactory(), new HttpFactory()))->validatedLedgerIndex('testnet'));
+        self::assertSame(1, $node->count('server_state'));
+    }
+
+    public function testTheValidatedLedgerIndexOnXahauComesFromXahausNode(): void
+    {
+        $node = (new FakeNode())->answer('server_state', 'xahau-server-state.json');
+
+        $index = (new XrplClient($node, new HttpFactory(), new HttpFactory(), 'XAHAU'))->validatedLedgerIndex('testnet');
+
+        self::assertSame(14139507, $index);
+        self::assertSame('https://xahau-test.net/', $node->calls[0]['url']);
+    }
+
+    /**
+     * A node that is still syncing reports no validated ledger. That is no index, not index 0:
+     * a lower bound of 0 would make a caller read an account's whole history.
+     */
+    public function testANodeWithoutAValidatedLedgerHasNoIndexToGive(): void
+    {
+        $state = FakeNode::result('server-state.json');
+        unset($state['state']['validated_ledger']);
+        $node = (new FakeNode())->answer('server_state', $state);
+
+        $this->expectException(XrplRpcException::class);
+
+        (new XrplClient($node, new HttpFactory(), new HttpFactory()))->validatedLedgerIndex('testnet');
+    }
+
+    public function testAServerStateErrorIsNotAnIndex(): void
+    {
+        $node = (new FakeNode())->answer('server_state', ['status' => 'error', 'error' => 'noNetwork']);
+
+        try {
+            (new XrplClient($node, new HttpFactory(), new HttpFactory()))->validatedLedgerIndex('testnet');
+            self::fail('An error answer must not yield an index.');
+        } catch (XrplRpcException $exception) {
+            self::assertSame('noNetwork', $exception->error);
+        }
+    }
+
     public function testUnsupportedNetworkThrows(): void
     {
         $xrplClient = new XrplClient(new FakeHttpClient(), new HttpFactory(), new HttpFactory());
