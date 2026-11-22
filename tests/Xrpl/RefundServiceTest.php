@@ -65,7 +65,9 @@ final class RefundServiceTest extends TestCase
             ->answer('account_info ' . self::NAMED, $named)
             ->answer('account_lines ' . self::NAMED, self::recorded('account-lines-customer-without-trustline.json'))
             ->answer('account_info ' . self::ISSUER, 'rlusd-issuer-account-info.json')
-            ->answer('server_state', 'server-state.json');
+            ->answer('server_state', 'server-state.json')
+            // The paying account has sent nothing so far.
+            ->answer('account_tx', ['status' => 'success', 'ledger_index_max' => self::VALIDATED_LEDGER, 'transactions' => []]);
     }
 
     /* ---------- back to the sender ---------- */
@@ -727,7 +729,7 @@ final class RefundServiceTest extends TestCase
 
         self::assertTrue($this->service()->preview($this->request(amount: '40.5', ownWalletConfirmed: true))->isAllowed(), 'another amount can be told apart');
 
-        $this->refunds->update($first->cancelled(self::NOW), $first->version);
+        $this->service()->cancel($first->id);
         self::assertTrue($this->service()->preview($this->request(amount: '40', ownWalletConfirmed: true))->isAllowed(), 'a closed refund is no longer in the way');
     }
 
@@ -978,7 +980,7 @@ final class RefundServiceTest extends TestCase
         self::assertNotSame($first->reference, $second->reference);
     }
 
-    /* ---------- the payment request ---------- */
+    /* ---------- the payment request and cancelling ---------- */
 
     public function testThePaymentRequestCarriesTheReferenceAndATagOnlyWhenThereIsOne(): void
     {
@@ -1004,6 +1006,308 @@ final class RefundServiceTest extends TestCase
         self::assertNotNull($this->service()->paymentUri($open));
         self::assertNull($this->service()->paymentUri($cancelled));
         self::assertNull($this->service()->paymentUri($executed));
+    }
+
+    public function testCancellingWithdrawsAnOpenRefundAndNothingElse(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+        $this->clock->advance(120);
+
+        $cancellation = $service->cancel($refund->id);
+
+        self::assertTrue($cancellation->isCancelled());
+        self::assertFalse($cancellation->couldNotVerify());
+        self::assertTrue($cancellation->reconciled?->complete);
+        self::assertSame(self::NOW + 120, $cancellation->refund?->closedAt);
+        self::assertEquals($cancellation->refund, $service->find($refund->id));
+
+        $again = $service->cancel($refund->id);
+        self::assertEquals($cancellation->refund, $again->refund, 'cancelling twice changes nothing');
+        self::assertNull($again->reconciled, 'and does not read the ledger for a refund that is not open');
+
+        self::assertNull($service->cancel(str_repeat('0', 32))->refund);
+    }
+
+    /**
+     * The merchant signed a moment ago and now clicks "cancel": the ledger is read first, and
+     * the refund comes back executed.
+     */
+    public function testARefundThatWasJustPaidIsFoundExecutedInsteadOfBeingCancelled(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+        $this->node->answer('account_tx ' . self::MERCHANT, ['status' => 'success', 'ledger_index_max' => self::VALIDATED_LEDGER + 2, 'transactions' => [
+            self::outgoing('payment', self::CUSTOMER, '40000000', ledgerIndex: self::VALIDATED_LEDGER + 1, invoiceId: $refund->reference),
+        ]]);
+        $this->node->answer('server_state', self::serverState(self::VALIDATED_LEDGER + 2));
+
+        $cancellation = $service->cancel($refund->id);
+
+        self::assertFalse($cancellation->isCancelled());
+        self::assertTrue($cancellation->refund?->isExecuted());
+        self::assertSame(self::hash('payment'), $cancellation->refund?->executedHash);
+        self::assertSame(Refund::MATCHED_BY_REFERENCE, $cancellation->refund?->matchedBy);
+        self::assertEquals([$cancellation->refund], $cancellation->reconciled?->executed);
+    }
+
+    /**
+     * Cancelling frees the amount for another refund. With the ledger unread nobody knows
+     * whether the first was paid, so it is not cancelled.
+     */
+    public function testARefundIsNotCancelledWhileTheLedgerCannotBeRead(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+        $this->node->answer('account_tx ' . self::MERCHANT, ['status' => 'error', 'error' => 'noNetwork']);
+
+        $cancellation = $service->cancel($refund->id);
+
+        self::assertFalse($cancellation->isCancelled());
+        self::assertTrue($cancellation->couldNotVerify());
+        self::assertTrue($service->find($refund->id)?->isAwaitingExecution());
+    }
+
+    /**
+     * The node that answers is far behind the newest validated ledger: what it does not show
+     * is not known not to have happened, and the refund is not cancelled on its word.
+     */
+    public function testARefundIsNotCancelledOnTheWordOfANodeThatIsBehind(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+        $this->node
+            ->answer('server_state', self::serverState(self::VALIDATED_LEDGER + 500))
+            ->answer('account_tx ' . self::MERCHANT, ['status' => 'success', 'ledger_index_max' => self::VALIDATED_LEDGER + 3, 'transactions' => []]);
+
+        $cancellation = $service->cancel($refund->id);
+
+        self::assertTrue($cancellation->couldNotVerify());
+        self::assertStringContainsString('covers ledgers up to', (string) $cancellation->reconciled?->error);
+        self::assertTrue($service->find($refund->id)?->isAwaitingExecution());
+    }
+
+    /**
+     * After a test network was reset its ledger starts again far below the one the refund was
+     * created in. No payment for it can ever be found there, and it can be withdrawn.
+     */
+    public function testARefundFromBeforeATestnetResetCanBeCancelled(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+        $this->node->answer('server_state', self::serverState(5000));
+
+        $cancellation = $service->cancel($refund->id);
+
+        self::assertTrue($cancellation->isCancelled());
+        self::assertEquals([$refund], $cancellation->reconciled?->unreachable);
+        self::assertSame(0, $this->node->count('account_tx') - 1, 'only the preview read the account, the look before cancelling had nothing to read');
+    }
+
+    /* ---------- naming the transaction that paid ---------- */
+
+    /**
+     * Paid from another account of the merchant, a little less than asked, and found by nobody:
+     * the merchant names the transaction, and what differs is written down.
+     */
+    public function testAPaymentTheMerchantNamesExecutesTheRefundWithWhatDiffersWrittenDown(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', destination: self::NAMED, destinationTag: '4711', destinationTagRepeat: '4711'));
+        $payment = self::outgoingTx('by hand', self::NAMED, '39500000', tag: 4711, from: self::CUSTOMER, ledgerIndex: 22390000);
+        $this->node->answer('tx ' . self::hash('by hand'), $payment);
+
+        $executed = $service->attach($refund->id, strtolower(self::hash('by hand')));
+
+        self::assertTrue($executed->isExecuted());
+        self::assertSame(Refund::MATCHED_BY_ATTACHED, $executed->matchedBy);
+        self::assertSame([Refund::DEVIATION_OTHER_ACCOUNT, Refund::DEVIATION_AMOUNT], $executed->deviations);
+        self::assertSame(self::CUSTOMER, $executed->executedAccount);
+        self::assertSame('39.5', $executed->delivered?->value);
+        self::assertSame(848500511 + 946684800, $executed->executedAt);
+        self::assertSame(22390000, $executed->executedLedger, 'also a payment from before the refund was created');
+        self::assertEquals($executed, $service->find($refund->id));
+    }
+
+    public function testANamedPaymentAlsoExecutesACancelledRefund(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+        $service->cancel($refund->id);
+        $this->node->answer('tx ' . self::hash('late'), self::outgoingTx('late', self::CUSTOMER, '40000000'));
+
+        $executed = $service->attach($refund->id, self::hash('late'));
+
+        self::assertSame([Refund::DEVIATION_AFTER_CANCEL], $executed->deviations);
+    }
+
+    /**
+     * @param callable(array<string, mixed>): ?array<string, mixed> $change
+     */
+    #[DataProvider('paymentsThatAreNotTheRefund')]
+    public function testATransactionThatIsNotAPaymentToTheRefundsDestinationWithItsTagAndAssetIsNotItsExecution(
+        callable $change,
+        string $code,
+        array $context,
+    ): void {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', destination: self::NAMED, destinationTag: '4711', destinationTagRepeat: '4711'));
+        $answer = $change(self::outgoingTx('named', self::NAMED, '40000000', tag: 4711));
+        $this->node->answer('tx ' . self::hash('named'), $answer ?? ['status' => 'error', 'error' => 'txnNotFound']);
+
+        try {
+            $service->attach($refund->id, self::hash('named'));
+            self::fail("Must be refused with '{$code}'.");
+        } catch (RefundRefusedException $refused) {
+            self::assertSame($code, $refused->notices[0]->code);
+            self::assertSame($context, $refused->notices[0]->context);
+        }
+
+        self::assertTrue($service->find($refund->id)?->isAwaitingExecution());
+    }
+
+    /**
+     * @return array<string, array{callable(array<string, mixed>): ?array<string, mixed>, string, array<string, string>}>
+     */
+    public static function paymentsThatAreNotTheRefund(): array
+    {
+        $with = static fn (string $field, mixed $value): callable => static function (array $tx) use ($field, $value): array {
+            $tx[$field] = $value;
+
+            return $tx;
+        };
+        $without = static fn (string $field): callable => static function (array $tx) use ($field): array {
+            unset($tx[$field]);
+
+            return $tx;
+        };
+
+        return [
+            'not on the ledger' => [static fn (array $tx): ?array => null, RefundNotice::TRANSACTION_NOT_FOUND, []],
+            'not validated yet' => [$with('validated', false), RefundNotice::TRANSACTION_NOT_VALIDATED, []],
+            'refused by the ledger' => [
+                static function (array $tx): array {
+                    $tx['meta'] = ['TransactionResult' => 'tecDST_TAG_NEEDED'];
+
+                    return $tx;
+                },
+                RefundNotice::TRANSACTION_FAILED,
+                ['result' => 'tecDST_TAG_NEEDED'],
+            ],
+            'not a payment' => [$with('TransactionType', 'EscrowCreate'), RefundNotice::TRANSACTION_MISMATCH, ['field' => 'type']],
+            'to another account' => [$with('Destination', self::CUSTOMER), RefundNotice::TRANSACTION_MISMATCH, ['field' => 'destination']],
+            'with another tag' => [$with('DestinationTag', 4712), RefundNotice::TRANSACTION_MISMATCH, ['field' => 'tag']],
+            'without the tag' => [$without('DestinationTag'), RefundNotice::TRANSACTION_MISMATCH, ['field' => 'tag']],
+            'in another asset' => [
+                static function (array $tx): array {
+                    $tx['meta']['delivered_amount'] = ['currency' => self::RLUSD, 'issuer' => self::ISSUER, 'value' => '40'];
+
+                    return $tx;
+                },
+                RefundNotice::TRANSACTION_MISMATCH,
+                ['field' => 'asset'],
+            ],
+        ];
+    }
+
+    public function testWhatCannotBeNamedAsAnExecution(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $first = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+        $second = $service->create($this->request(amount: '40.5', ownWalletConfirmed: true));
+        $this->node->answer('tx ' . self::hash('once'), self::outgoingTx('once', self::CUSTOMER, '40000000'));
+        $service->attach($first->id, self::hash('once'));
+
+        $expect = function (string $code, callable $attach): void {
+            try {
+                $attach();
+                self::fail("Must be refused with '{$code}'.");
+            } catch (RefundRefusedException $refused) {
+                self::assertTrue($refused->has($code), $refused->getMessage());
+            }
+        };
+
+        $expect(RefundNotice::ALREADY_EXECUTED, fn () => $service->attach($first->id, self::hash('once')));
+        $expect(RefundNotice::TRANSACTION_ALREADY_ASSIGNED, fn () => $service->attach($second->id, self::hash('once')));
+        $expect(RefundNotice::REFUND_NOT_FOUND, fn () => $service->attach(str_repeat('0', 32), self::hash('once')));
+        $expect(RefundNotice::TRANSACTION_NOT_FOUND, fn () => $service->attach($second->id, 'not a hash'));
+
+        $this->node->answer('tx ' . self::hash('down'), ['status' => 'error', 'error' => 'noNetwork']);
+        $expect(RefundNotice::LEDGER_UNAVAILABLE, fn () => $service->attach($second->id, self::hash('down')));
+    }
+
+    /* ---------- paid by hand already? ---------- */
+
+    /**
+     * Before a refund is created the preview shows what the paying account already sent to the
+     * destination since the payment — the one protection that holds without the refund table.
+     */
+    public function testThePreviewShowsWhatWasAlreadySentToTheDestinationSinceThePayment(): void
+    {
+        $this->paid('A', '100000000');
+        $this->node->answer('account_tx ' . self::MERCHANT, ['status' => 'success', 'transactions' => [
+            self::outgoing('by hand', self::CUSTOMER, '40000000', ledgerIndex: 22475020),
+            self::outgoing('to somebody else', self::NAMED, '40000000', ledgerIndex: 22475021),
+            self::outgoing('refused', self::CUSTOMER, '40000000', ledgerIndex: 22475022, result: 'tecNO_DST'),
+            self::outgoing('incoming', self::MERCHANT, '40000000', ledgerIndex: 22475023, from: self::CUSTOMER),
+        ]]);
+
+        $preview = $this->service()->preview($this->request(amount: '40', ownWalletConfirmed: true));
+
+        self::assertTrue($preview->isAllowed(), 'advice, not a refusal');
+        self::assertSame(
+            ['hash' => self::hash('by hand'), 'amount' => '40', 'asset' => 'XRP', 'tag' => ''],
+            $preview->notice(RefundNotice::PAID_BEFORE)?->context,
+        );
+        self::assertCount(1, array_filter($preview->notices, static fn (RefundNotice $notice): bool => $notice->code === RefundNotice::PAID_BEFORE));
+        self::assertSame(22475010, $this->lastAccountTxCall()['ledger_index_min'], "from the payment's own ledger on");
+    }
+
+    public function testTheExecutionOfARefundOnRecordIsNotShownAsPaidByHand(): void
+    {
+        $this->paid('A', '100000000');
+        $service = $this->service();
+        $refund = $service->create($this->request(amount: '40', ownWalletConfirmed: true));
+        $this->node->answer('tx ' . self::hash('execution'), self::outgoingTx('execution', self::CUSTOMER, '40000000'));
+        $service->attach($refund->id, self::hash('execution'));
+        $this->node->answer('account_tx ' . self::MERCHANT, ['status' => 'success', 'transactions' => [
+            self::outgoing('execution', self::CUSTOMER, '40000000', ledgerIndex: 22475030),
+        ]]);
+
+        $preview = $service->preview($this->request(amount: '10', ownWalletConfirmed: true));
+
+        self::assertFalse($preview->has(RefundNotice::PAID_BEFORE));
+        self::assertSame([], $preview->notices);
+    }
+
+    /**
+     * A history that cannot be read is said to be unread. It is not "nothing was sent".
+     */
+    public function testAHistoryThatCannotBeReadIsSaidToBeUnread(): void
+    {
+        $this->paid('A', '100000000');
+
+        $this->node->answer('account_tx ' . self::MERCHANT, ['status' => 'error', 'error' => 'noNetwork']);
+        $preview = $this->service()->preview($this->request(amount: '40', ownWalletConfirmed: true));
+        self::assertTrue($preview->has(RefundNotice::PRIOR_PAYMENTS_NOT_CHECKED));
+        self::assertTrue($preview->isAllowed());
+
+        $this->node->answer('account_tx ' . self::MERCHANT, ['status' => 'success', 'transactions' => [], 'marker' => 'more']);
+        $preview = $this->service()->preview($this->request(amount: '40', ownWalletConfirmed: true));
+        self::assertTrue($preview->has(RefundNotice::PRIOR_PAYMENTS_NOT_CHECKED), 'more pages than a preview reads');
+
+        $this->node->answer('tx ' . self::hash('A'), ['status' => 'error', 'error' => 'txnNotFound']);
+        $preview = $this->service()->preview($this->request(amount: '40', destination: self::NAMED, destinationTag: '1', destinationTagRepeat: '1'));
+        self::assertTrue($preview->has(RefundNotice::PRIOR_PAYMENTS_NOT_CHECKED), 'a payment the ledger no longer has says nothing about where to start');
     }
 
     /* ---------- Xahau ---------- */
@@ -1155,6 +1459,88 @@ final class RefundServiceTest extends TestCase
         }
 
         return $result;
+    }
+
+    /**
+     * A transaction the merchant's account sent, as an entry of `account_tx`.
+     *
+     * @return array<string, mixed>
+     */
+    private static function outgoing(
+        string $name,
+        string $destination,
+        string $drops,
+        int $ledgerIndex = 22475030,
+        ?int $tag = null,
+        ?string $invoiceId = null,
+        string $result = 'tesSUCCESS',
+        string $from = self::MERCHANT,
+    ): array {
+        $tx = [
+            'Account' => $from,
+            'Amount' => $drops,
+            'Destination' => $destination,
+            'Fee' => '12',
+            'Flags' => 0,
+            'TransactionType' => 'Payment',
+            'date' => 848500511,
+            'hash' => self::hash($name),
+            'ledger_index' => $ledgerIndex,
+        ];
+        if ($tag !== null) {
+            $tx['DestinationTag'] = $tag;
+        }
+        if ($invoiceId !== null) {
+            $tx['InvoiceID'] = $invoiceId;
+        }
+
+        $meta = ['TransactionIndex' => 1, 'TransactionResult' => $result];
+        if ($result === 'tesSUCCESS') {
+            $meta['delivered_amount'] = $drops;
+        }
+
+        return ['meta' => $meta, 'tx' => $tx, 'validated' => true];
+    }
+
+    /**
+     * The same as `tx` returns it.
+     *
+     * @return array<string, mixed>
+     */
+    private static function outgoingTx(
+        string $name,
+        string $destination,
+        string $drops,
+        ?int $tag = null,
+        string $from = self::MERCHANT,
+        int $ledgerIndex = 22475030,
+    ): array {
+        $entry = self::outgoing($name, $destination, $drops, $ledgerIndex, $tag, from: $from);
+
+        return $entry['tx'] + ['meta' => $entry['meta'], 'validated' => true, 'status' => 'success'];
+    }
+
+    /**
+     * The recorded server_state with another newest validated ledger.
+     *
+     * @return array<string, mixed>
+     */
+    private static function serverState(int $validatedLedger): array
+    {
+        $state = FakeNode::result('server-state.json');
+        $state['state']['validated_ledger']['seq'] = $validatedLedger;
+
+        return $state;
+    }
+
+    /**
+     * @return array<string, mixed> the parameters of the last account_tx call
+     */
+    private function lastAccountTxCall(): array
+    {
+        $calls = array_values(array_filter($this->node->calls, static fn (array $call): bool => $call['method'] === 'account_tx'));
+
+        return $calls[count($calls) - 1]['params'];
     }
 
     private static function xrpIntent(float $requested = 100.0): PaymentIntent

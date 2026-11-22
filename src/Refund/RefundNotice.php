@@ -108,6 +108,41 @@ final readonly class RefundNotice
     public const CHECK_TAG_IN_WALLET = 'check_tag_in_wallet';
 
     /**
+     * The paying account already sent this destination a payment since the one being refunded:
+     * it may have been paid back by hand. Context: `hash`, `amount`, `tag`.
+     */
+    public const PAID_BEFORE = 'paid_before';
+
+    /** The paying account's transactions since the payment could not be read: an earlier payment to the destination may exist. */
+    public const PRIOR_PAYMENTS_NOT_CHECKED = 'prior_payments_not_checked';
+
+    /* --- naming the transaction that paid a refund --- */
+
+    /** There is no refund with that id. */
+    public const REFUND_NOT_FOUND = 'refund_not_found';
+
+    /** The refund is executed already. */
+    public const ALREADY_EXECUTED = 'already_executed';
+
+    /** Not a transaction hash, or the ledger has no such transaction. */
+    public const TRANSACTION_NOT_FOUND = 'transaction_not_found';
+
+    /** The transaction is not validated yet; try again in a moment. */
+    public const TRANSACTION_NOT_VALIDATED = 'transaction_not_validated';
+
+    /** The ledger refused the transaction. Context: `result`. */
+    public const TRANSACTION_FAILED = 'transaction_failed';
+
+    /**
+     * The transaction is not a payment to the refund's destination, with its tag, in its asset.
+     * Context: `field` (`type`, `destination`, `tag` or `asset`).
+     */
+    public const TRANSACTION_MISMATCH = 'transaction_mismatch';
+
+    /** The transaction already executes another refund. */
+    public const TRANSACTION_ALREADY_ASSIGNED = 'transaction_already_assigned';
+
+    /**
      * @param array<string, string> $context
      */
     public function __construct(

@@ -34,6 +34,43 @@ final class XrplClientTest extends TestCase
 
         self::assertSame([['tx' => ['hash' => 'ABC123']]], $page['transactions']);
         self::assertSame('next-page-marker', $page['marker']);
+        self::assertNull($page['ledger_index_max'], 'an answer that does not state its range');
+    }
+
+    /**
+     * The recorded answer says which ledgers it covered. On a pool of nodes that is the only
+     * statement about how far this answer goes.
+     */
+    public function testAccountTransactionsCarryTheNewestLedgerTheAnswerCovered(): void
+    {
+        $node = (new FakeNode())->answer('account_tx', json_decode(
+            (string) file_get_contents(__DIR__ . '/fixtures/refund/account-tx-merchant.json'),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        )['result']);
+
+        $page = (new XrplClient($node, new HttpFactory(), new HttpFactory()))->fetchAccountTransactions('rHKho3gASqL4SQYjnrrKdAoq2a3vyyLLKL', 'testnet');
+
+        self::assertSame(22475024, $page['ledger_index_max']);
+        self::assertCount(8, $page['transactions']);
+    }
+
+    /**
+     * An answer that says "success" and carries no list is not an empty page: whoever reads an
+     * account's history must not conclude "nothing happened" from it.
+     */
+    public function testASuccessWithoutATransactionListIsNotAnEmptyPage(): void
+    {
+        foreach ([['status' => 'success'], ['status' => 'success', 'transactions' => null], ['status' => 'success', 'transactions' => ['a' => []]]] as $result) {
+            $node = (new FakeNode())->answer('account_tx', $result);
+
+            try {
+                (new XrplClient($node, new HttpFactory(), new HttpFactory()))->fetchAccountTransactions('rSomeAddress', 'testnet');
+                self::fail('An answer without a transaction list must not read as an empty page.');
+            } catch (XrplRpcException $exception) {
+                self::assertStringContainsString('no transaction list', $exception->getMessage());
+            }
+        }
     }
 
     public function testEmptyTransactionsIsANormalResultNotAnException(): void

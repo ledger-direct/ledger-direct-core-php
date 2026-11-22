@@ -15,6 +15,7 @@ use Hardcastle\LedgerDirect\Core\Refund\PaymentOverview;
 use Hardcastle\LedgerDirect\Core\Refund\ReceivedPayment;
 use Hardcastle\LedgerDirect\Core\Refund\Refund;
 use Hardcastle\LedgerDirect\Core\Refund\RefundAmount;
+use Hardcastle\LedgerDirect\Core\Refund\RefundCancellation;
 use Hardcastle\LedgerDirect\Core\Refund\RefundDestination;
 use Hardcastle\LedgerDirect\Core\Refund\RefundNotice;
 use Hardcastle\LedgerDirect\Core\Refund\RefundPreview;
@@ -25,8 +26,8 @@ use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * Refunds on the XRP Ledger and on Xahau: says what a refund request would do (preview()) and
- * creates the refund (create()).
+ * Refunds on the XRP Ledger and on Xahau: says what a refund request would do (preview()),
+ * creates the refund (create()) and withdraws it (cancel()).
  *
  * **LedgerDirect never sends.** A refund is a payment request; the merchant signs it in their
  * own wallet (paymentUri()). Nothing here holds a key, and nothing here calls a refund paid:
@@ -53,11 +54,22 @@ final class RefundService
     /** A token value keeps 16 significant digits on the ledger; more would not arrive as asked. */
     private const MAX_TOKEN_DIGITS = 16;
 
+    /** Pages of the paying account's transactions a preview reads to look for an earlier payment. */
+    private const PRIOR_PAYMENT_PAGES = 2;
+
+    /** Earlier payments a preview lists at most. */
+    private const PRIOR_PAYMENT_NOTICES = 5;
+
+    /** A transaction's `date` counts seconds from 2000-01-01; Unix time counts from 1970. */
+    private const LEDGER_EPOCH_OFFSET = 946684800;
+
     private readonly ReceivedPayments $receivedPayments;
 
     private readonly RefundDestinationCheck $destinationCheck;
 
     private readonly ClockInterface $clock;
+
+    private readonly RefundReconciler $reconciler;
 
     /**
      * @param string $chain 'XRPL' or 'XAHAU', as the client and the repositories it is given
@@ -66,6 +78,8 @@ final class RefundService
      *     executed refunds can be found on the ledger even if the refund table were lost;
      *     without it nobody outside can compute which payment belongs to which. Null: the
      *     reference is random.
+     * @param RefundReconciler|null $reconciler reads the ledger before a refund is cancelled; the
+     *     composition root passes the one it also hands to the scheduled task
      */
     public function __construct(
         private readonly XrplClient $client,
@@ -75,6 +89,7 @@ final class RefundService
         ?ClockInterface $clock = null,
         private readonly string $chain = ChainCatalog::XRPL,
         private readonly ?string $referenceKey = null,
+        ?RefundReconciler $reconciler = null,
     ) {
         if (!in_array($chain, [ChainCatalog::XRPL, ChainCatalog::XAHAU], true)) {
             throw new InvalidArgumentException("Refunds exist on XRPL and XAHAU, not on '{$chain}'.");
@@ -83,6 +98,7 @@ final class RefundService
         $this->receivedPayments = new ReceivedPayments($transactions, $refunds, $logger);
         $this->destinationCheck = new RefundDestinationCheck($client);
         $this->clock = $clock ?? new SystemClock();
+        $this->reconciler = $reconciler ?? new RefundReconciler($client, $refunds, $logger, $this->clock, null, $chain);
     }
 
     /**
@@ -181,6 +197,125 @@ final class RefundService
         }
 
         throw new RefundRefusedException([new RefundNotice(RefundNotice::CONFLICT, true)]);
+    }
+
+    /**
+     * Withdraws a refund that still awaits execution — after reading the ledger once more. A
+     * refund that was paid a moment ago comes back executed, not cancelled; and if the ledger
+     * cannot be read to the end, the refund stays as it is: cancelling it would free its amount
+     * for a second refund while nobody knows whether the first was paid.
+     *
+     * Whatever else the refund is by now — executed, already cancelled — comes back as it is.
+     */
+    public function cancel(string $id): RefundCancellation
+    {
+        $refund = $this->refunds->find($id);
+        if ($refund === null || !$refund->isAwaitingExecution()) {
+            return new RefundCancellation($refund);
+        }
+
+        $reconciled = $this->reconciler->reconcile($refund->payingAccount, $refund->network);
+
+        $otherEpoch = false;
+        foreach ($reconciled->unreachable as $unreachable) {
+            $otherEpoch = $otherEpoch || $unreachable->id === $id;
+        }
+
+        for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
+            $refund = $this->refunds->find($id);
+            if ($refund === null || !$refund->isAwaitingExecution()) {
+                return new RefundCancellation($refund, $reconciled);
+            }
+
+            // A refund from before a test network was reset cannot be paid on this ledger; it
+            // can go without the look that is impossible for it.
+            if (!$reconciled->complete && !$otherEpoch) {
+                return new RefundCancellation($refund, $reconciled);
+            }
+
+            $cancelled = $refund->cancelled($this->now());
+            if ($this->refunds->update($cancelled, $refund->version)) {
+                $this->logger->info('LedgerDirect: refund cancelled', ['refund' => $refund->id]);
+
+                return new RefundCancellation($cancelled, $reconciled);
+            }
+        }
+
+        return new RefundCancellation($this->refunds->find($id), $reconciled);
+    }
+
+    /**
+     * The merchant names the transaction that paid a refund: one the core did not recognise by
+     * itself, because it came from another account of theirs, in another amount, before the
+     * refund existed, or after it was cancelled. It must be a validated, successful payment to
+     * the refund's destination, with the refund's tag, in the refund's asset. In what it
+     * differs from the request is written on the refund (Refund::DEVIATIONS).
+     *
+     * @throws RefundRefusedException with the reason, when it is not such a payment
+     */
+    public function attach(string $id, string $hash): Refund
+    {
+        $hash = strtoupper(trim($hash));
+
+        for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
+            $refund = $this->refunds->find($id) ?? throw self::refusal(RefundNotice::REFUND_NOT_FOUND);
+            if ($refund->isExecuted()) {
+                throw self::refusal(RefundNotice::ALREADY_EXECUTED);
+            }
+
+            if (preg_match('/^[0-9A-F]{64}$/', $hash) !== 1) {
+                throw self::refusal(RefundNotice::TRANSACTION_NOT_FOUND);
+            }
+
+            try {
+                $result = $this->client->tx($hash, $refund->network);
+                $transaction = $result === null ? null : LedgerTransaction::fromTx($result);
+            } catch (XrplRpcException $exception) {
+                throw new RefundRefusedException([self::ledgerUnavailable($exception)]);
+            }
+
+            $delivered = $transaction?->delivered;
+            $mismatch = match (true) {
+                $transaction === null => throw self::refusal(RefundNotice::TRANSACTION_NOT_FOUND),
+                !$transaction->validated => throw self::refusal(RefundNotice::TRANSACTION_NOT_VALIDATED),
+                !$transaction->succeeded() => throw self::refusal(RefundNotice::TRANSACTION_FAILED, ['result' => (string) $transaction->result]),
+                !$transaction->isPayment() || $delivered === null => 'type',
+                $transaction->destination !== $refund->destination->account => 'destination',
+                $transaction->destinationTag !== $refund->destination->tag => 'tag',
+                !$delivered->sameAsset($refund->amount) => 'asset',
+                default => null,
+            };
+            if ($mismatch !== null || $delivered === null) {
+                throw self::refusal(RefundNotice::TRANSACTION_MISMATCH, ['field' => (string) $mismatch]);
+            }
+
+            $executed = $refund->executed(
+                hash: $transaction->hash,
+                ledgerIndex: (int) $transaction->ledgerIndex,
+                executedAt: $transaction->date === null ? $this->now() : $transaction->date + self::LEDGER_EPOCH_OFFSET,
+                account: $transaction->account,
+                delivered: $delivered,
+                matchedBy: Refund::MATCHED_BY_ATTACHED,
+                closedAt: $this->now(),
+            );
+
+            if ($this->refunds->update($executed, $refund->version)) {
+                $this->logger->info('LedgerDirect: refund executed by a transaction the merchant named', [
+                    'refund' => $refund->id,
+                    'hash' => $executed->executedHash,
+                    'deviation' => implode(',', $executed->deviations),
+                ]);
+
+                return $executed;
+            }
+
+            // Refused: the refund changed meanwhile (read again), or the transaction is taken.
+            if ($this->refunds->find($id)?->version === $refund->version) {
+                throw self::refusal(RefundNotice::TRANSACTION_ALREADY_ASSIGNED);
+            }
+        }
+
+        throw self::refusal(RefundNotice::CONFLICT);
     }
 
     public function find(string $id): ?Refund
@@ -374,13 +509,19 @@ final class RefundService
                 ]);
             }
 
+            $toDestination = $this->refunds->findByDestination($intent->network, $payingAccount, $account);
+
             if ($amount !== null) {
-                foreach ($this->refunds->findByDestination($intent->network, $payingAccount, $account) as $existing) {
+                foreach ($toDestination as $existing) {
                     if ($existing->isAwaitingExecution() && $existing->destination->tag === $tag && $existing->amount->equals($amount)) {
                         $notices[] = new RefundNotice(RefundNotice::DUPLICATE_OPEN_REFUND, true, ['refund' => $existing->id]);
                         break;
                     }
                 }
+            }
+
+            if (!$ledgerDown) {
+                array_push($notices, ...$this->priorPayments($payingAccount, $account, $intent->network, $source, $toDestination));
             }
         }
 
@@ -399,6 +540,70 @@ final class RefundService
             'payment' => $payment,
             'fiat' => $fiat,
         ];
+    }
+
+    /**
+     * What the paying account already sent to the destination since the payment being refunded,
+     * other than the executions of refunds on record: the refund may have been paid by hand
+     * already. Also the one protection that holds if the refund table were ever lost.
+     *
+     * Advice, never a refusal. A history that cannot be read is said to be unread, not empty.
+     *
+     * @param list<Refund> $toDestination the refunds on record to this destination
+     * @return list<RefundNotice>
+     */
+    private function priorPayments(string $payingAccount, string $destination, string $network, ?LedgerTransaction $source, array $toDestination): array
+    {
+        if ($source === null || $source->ledgerIndex === null) {
+            return [new RefundNotice(RefundNotice::PRIOR_PAYMENTS_NOT_CHECKED, false)];
+        }
+
+        $onRecord = [];
+        foreach ($toDestination as $refund) {
+            if ($refund->executedHash !== null) {
+                $onRecord[$refund->executedHash] = true;
+            }
+        }
+
+        $notices = [];
+        $marker = null;
+        $pages = 0;
+
+        try {
+            do {
+                // "From the payment's own ledger on": the client asks for the ledger after the one given.
+                $page = $this->client->fetchAccountTransactions($payingAccount, $network, $source->ledgerIndex - 1, $marker);
+
+                foreach ($page['transactions'] as $entry) {
+                    $transaction = LedgerTransaction::fromAccountTx($entry);
+                    if ($transaction->account !== $payingAccount || $transaction->destination !== $destination
+                        || !$transaction->succeeded() || isset($onRecord[$transaction->hash])
+                    ) {
+                        continue;
+                    }
+
+                    if (count($notices) < self::PRIOR_PAYMENT_NOTICES) {
+                        $notices[] = new RefundNotice(RefundNotice::PAID_BEFORE, false, [
+                            'hash' => $transaction->hash,
+                            'amount' => $transaction->delivered?->value ?? '',
+                            'asset' => $transaction->delivered === null ? '' : $this->assetName($transaction->delivered),
+                            'tag' => $transaction->destinationTag === null ? '' : (string) $transaction->destinationTag,
+                        ]);
+                    }
+                }
+
+                $marker = $page['marker'];
+                $pages++;
+            } while ($marker !== null && $pages < self::PRIOR_PAYMENT_PAGES);
+        } catch (XrplRpcException) {
+            $marker = 'unread';
+        }
+
+        if ($marker !== null) {
+            $notices[] = new RefundNotice(RefundNotice::PRIOR_PAYMENTS_NOT_CHECKED, false);
+        }
+
+        return $notices;
     }
 
     /**
@@ -609,6 +814,14 @@ final class RefundService
     private function now(): int
     {
         return $this->clock->now()->getTimestamp();
+    }
+
+    /**
+     * @param array<string, string> $context
+     */
+    private static function refusal(string $code, array $context = []): RefundRefusedException
+    {
+        return new RefundRefusedException([new RefundNotice($code, true, $context)]);
     }
 
     private static function ledgerUnavailable(XrplRpcException $exception): RefundNotice
