@@ -12,9 +12,9 @@ use RuntimeException;
 use Throwable;
 
 /**
- * A JSON-RPC node for tests: answers by method and account (`account_info rAbc…`,
- * `server_state`) from the fixtures recorded on the testnet, or from an answer a test
- * set itself; counts the calls. FakeHttpClient matches on the URL only, and every XRPL
+ * A JSON-RPC node for tests: answers by method and account or transaction (`account_info
+ * rAbc…`, `tx 5D4B…`, `server_state`) from the fixtures recorded on the testnet, or from an
+ * answer a test set itself; counts the calls. FakeHttpClient matches on the URL only, and every XRPL
  * call goes to the same URL.
  */
 final class FakeNode implements ClientInterface
@@ -27,7 +27,7 @@ final class FakeNode implements ClientInterface
     /** @var list<array{url: string, method: string, params: array<string, mixed>}> */
     public array $calls = [];
 
-    /** Answers `$method $account` (or `$method` alone) with a fixture file, a result object, a raw response or an exception. */
+    /** Answers `$method $account`, `tx $hash` (or `$method` alone) with a fixture file, a result object, a raw response or an exception. */
     public function answer(string $call, string|array|ResponseInterface|Throwable $fixtureOrResult): self
     {
         $this->answers[$call] = match (true) {
@@ -56,9 +56,11 @@ final class FakeNode implements ClientInterface
         $params = (array) ($body['params'][0] ?? []);
         $this->calls[] = ['url' => (string) $request->getUri(), 'method' => $method, 'params' => $params];
 
-        $answer = $this->answers[trim($method . ' ' . ($params['account'] ?? ''))] ?? $this->answers[$method] ?? null;
+        // What the call is about: an account, or for `tx` a transaction hash.
+        $subject = (string) ($params['account'] ?? $params['transaction'] ?? '');
+        $answer = $this->answers[trim($method . ' ' . $subject)] ?? $this->answers[$method] ?? null;
         if ($answer === null) {
-            throw new RuntimeException("FakeNode: no answer for {$method} " . ($params['account'] ?? ''));
+            throw new RuntimeException("FakeNode: no answer for {$method} {$subject}");
         }
         if ($answer instanceof Throwable) {
             throw $answer;

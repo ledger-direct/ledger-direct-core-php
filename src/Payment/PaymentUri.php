@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hardcastle\LedgerDirect\Core\Payment;
 
+use Hardcastle\LedgerDirect\Core\Refund\Refund;
 use InvalidArgumentException;
 
 /**
@@ -64,22 +65,79 @@ final class PaymentUri
      */
     public static function forIntent(PaymentIntent $intent, string $amountDue, string $amountMode = self::AMOUNT_MODE): string
     {
-        $parameters = [
-            'to' => $intent->destinationAccount,
-            'dt' => (string) $intent->destinationTag,
-        ];
+        $token = is_array($intent->amountRequested);
 
-        if ($amountMode === self::AMOUNT_DISPLAYED && $amountDue !== '') {
-            $parameters['amount'] = $amountDue;
+        return self::build(
+            to: $intent->destinationAccount,
+            tag: $intent->destinationTag,
+            amount: $amountMode === self::AMOUNT_DISPLAYED && $amountDue !== '' ? $amountDue : null,
+            currency: $token ? (string) $intent->amountRequested['currency'] : null,
+            issuer: $token ? (string) $intent->amountRequested['issuer'] : null,
+            invoiceId: null,
+            chain: $intent->chain,
+            network: $intent->network,
+        );
+    }
+
+    /**
+     * The request a merchant signs to pay a refund: to the refund's destination, the exact
+     * amount, and the refund's reference as `invoiceid`.
+     *
+     * Two differences from a customer's request, both on purpose. **`dt` is there only when the
+     * refund has a tag**: a destination without one must not get tag 0 by default. And the
+     * request carries `invoiceid`: Xaman copies it into the payment's `InvoiceID` field
+     * (scanned on both testnets, 2026-11-20, also together with a tag and a token), and by that
+     * field the core tells which refund a payment was meant for.
+     */
+    public static function forRefund(Refund $refund): string
+    {
+        return self::build(
+            to: $refund->destination->account,
+            tag: $refund->destination->tag,
+            amount: $refund->amount->value,
+            currency: $refund->amount->currency,
+            issuer: $refund->amount->issuer,
+            invoiceId: $refund->reference,
+            chain: $refund->chain,
+            network: $refund->network,
+        );
+    }
+
+    /**
+     * The one place the parameter names and their order are written: `to`, `dt`, `amount`,
+     * `currency` and `issuer`, `invoiceid`, and `network` last.
+     */
+    private static function build(
+        string $to,
+        ?int $tag,
+        ?string $amount,
+        ?string $currency,
+        ?string $issuer,
+        ?string $invoiceId,
+        string $chain,
+        string $network,
+    ): string {
+        $parameters = ['to' => $to];
+
+        if ($tag !== null) {
+            $parameters['dt'] = (string) $tag;
         }
 
-        if (is_array($intent->amountRequested)) {
-            $parameters['currency'] = (string) $intent->amountRequested['currency'];
-            $parameters['issuer'] = (string) $intent->amountRequested['issuer'];
+        if ($amount !== null) {
+            $parameters['amount'] = $amount;
         }
 
-        $parameters['network'] = self::NETWORK_KEYS[$intent->chain][$intent->network]
-            ?? throw new InvalidArgumentException("Unsupported network '{$intent->network}' on chain '{$intent->chain}'.");
+        if ($currency !== null && $issuer !== null) {
+            $parameters['currency'] = $currency;
+            $parameters['issuer'] = $issuer;
+        }
+
+        if ($invoiceId !== null) {
+            $parameters['invoiceid'] = $invoiceId;
+        }
+
+        $parameters['network'] = self::NETWORK_KEYS[$chain][$network]
+            ?? throw new InvalidArgumentException("Unsupported network '{$network}' on chain '{$chain}'.");
 
         return self::BASE . '?' . http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
     }

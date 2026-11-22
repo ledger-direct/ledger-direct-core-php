@@ -39,6 +39,9 @@ final readonly class RefundNotice
     /** An open refund to the same destination, tag, asset and amount exists. Context: `refund`. */
     public const DUPLICATE_OPEN_REFUND = 'duplicate_open_refund';
 
+    /** Another request for the same payment was stored at the same moment; look again. */
+    public const CONFLICT = 'conflict';
+
     /** The node could not be asked; nothing is created on a guess. Context: `error`. */
     public const LEDGER_UNAVAILABLE = 'ledger_unavailable';
 
