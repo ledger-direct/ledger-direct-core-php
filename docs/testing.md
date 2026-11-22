@@ -65,6 +65,18 @@ recovery. `XahauWiringTest` pins every place the chain parameter reaches (endpoi
 messages, quote, root, throttle key, payment request, tables). The XRPL tests are unchanged — the
 proof that the parameter defaults to the XRP Ledger. No plugin and no harness chain yet.
 
+**Refunds** (core 0.13.0): 397 unit tests. `LedgerTransactionTest` reads the two answer shapes
+strictly, `RefundServiceTest` holds one test per rule a request has to pass (no tag without an
+attestation, the sender that requires a tag or sent a source tag, the limit under two simultaneous
+requests), `RefundMatcherTest` one per rule of what a payment means for a refund, and
+`RefundReconcilerTest` runs the pass on what an account really did on the XRPL and Xahau testnets
+on 2026-11-20 (`tests/Xrpl/fixtures/refund/`): a token to an account without the trust line, a
+payment without the tag an account requires, the payment with the tag, a partial payment. The
+recordings are unchanged; how they were made is in `Handover-Erstattung-V2-Fixtures/README.md`
+of the LedgerDirect documentation. `RefundRepositoryContractTestCase` is the port's contract for
+the adapters. The manual cases are RF-01…RF-22 in
+[`manual-tests/refund.md`](manual-tests/refund.md); no plugin carries refunds yet.
+
 ## What the contract is checked against
 
 | Invariant (`INVARIANTS.md`) | Checked by |
@@ -72,6 +84,7 @@ proof that the parameter defaults to the XRP Ledger. No plugin and no harness ch
 | `PaymentIntent` schema v1, plain-decimal accessors | core unit; every plugin's presenter test |
 | Settlement: tolerance for XRP, exact currency and issuer for tokens | core unit; plugin integration (short payment, wrong issuer, top-up) |
 | Payment status: five states, derivation order, payload keys | core unit; each plugin's status-endpoint test; the harness reads the payload in every case |
+| Refund: no tag without an attestation, the limit per payment, exact matching, findings | core unit; the repository contract test in every adapter; harness cases RF-01…RF-22 |
 | Only `settled` or `redirect` stops polling | package contract test; harness cases PS-03, PS-04, PS-11 |
 | Markup contract `data-ld-*` | package tests (documented attributes); plugin integration tests render the page; the harness reads the page through the contract only |
 | Payment request behind the QR code | core unit; plugin presenter tests; PW-04 by hand |

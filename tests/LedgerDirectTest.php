@@ -13,10 +13,13 @@ use Hardcastle\LedgerDirect\Core\Testing\FakeConfigProvider;
 use Hardcastle\LedgerDirect\Core\Testing\FakeHttpClient;
 use Hardcastle\LedgerDirect\Core\Testing\FrozenClock;
 use Hardcastle\LedgerDirect\Core\Testing\InMemoryCache;
+use Hardcastle\LedgerDirect\Core\Testing\InMemoryRefundRepository;
 use Hardcastle\LedgerDirect\Core\Testing\InMemoryXrplTransactionRepository;
 use Hardcastle\LedgerDirect\Core\Testing\RecordingLogger;
+use Hardcastle\LedgerDirect\Core\Xrpl\RefundService;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncThrottle;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplTransaction;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 
 final class LedgerDirectTest extends TestCase
@@ -122,6 +125,67 @@ final class LedgerDirectTest extends TestCase
         $core->priceService()->getCryptoPriceForOrder(91.9, 'EUR', 'RLUSD', 'mainnet');
 
         self::assertCount(2, $client->sentRequests(), 'a 10 s TTL crossed by 11 s refetches');
+    }
+
+    /**
+     * A platform that has not adopted refunds passes no refund repository: everything else is
+     * as before, and asking for the refund services says what is missing.
+     */
+    public function testWithoutARefundRepositoryThereAreNoRefundServices(): void
+    {
+        $core = $this->create(cache: new InMemoryCache());
+
+        self::assertNull($core->refundRepository());
+        self::assertInstanceOf(SyncThrottle::class, $core->syncThrottle());
+
+        foreach (['refundService', 'refundReconciler'] as $getter) {
+            try {
+                $core->{$getter}();
+                self::fail("{$getter}() needs a refund repository.");
+            } catch (LogicException $exception) {
+                self::assertStringContainsString('refundRepository', $exception->getMessage());
+            }
+        }
+    }
+
+    public function testWithARefundRepositoryTheRefundServicesAreWired(): void
+    {
+        $refunds = new InMemoryRefundRepository();
+        $core = LedgerDirect::create(
+            new FakeHttpClient(),
+            new HttpFactory(),
+            new HttpFactory(),
+            new RecordingLogger(),
+            new InMemoryXrplTransactionRepository(),
+            new FakeConfigProvider(),
+            new InMemoryCache(),
+            refundRepository: $refunds,
+            refundReferenceKey: 'installation-secret',
+        );
+
+        self::assertSame($refunds, $core->refundRepository());
+        self::assertInstanceOf(RefundService::class, $core->refundService());
+        self::assertSame($core->refundService(), $core->refundService());
+        self::assertSame($core->refundReconciler(), $core->refundReconciler());
+        self::assertSame($core->refundThrottle(), $core->refundThrottle());
+        self::assertNotSame($core->syncThrottle(), $core->refundThrottle());
+        self::assertNull($core->refundService()->find(str_repeat('0', 32)));
+    }
+
+    /**
+     * The refund throttle has a key space of its own: a payment sync of the same account does
+     * not hold the look for a refund back.
+     */
+    public function testTheRefundThrottleDoesNotShareMarksWithThePaymentThrottle(): void
+    {
+        $core = $this->create(cache: new InMemoryCache());
+
+        self::assertNull($this->create()->refundThrottle(), 'no cache, no throttle');
+
+        $core->syncThrottle()?->markSynced('testnet', 'rMerchant');
+
+        self::assertFalse($core->syncThrottle()?->shouldSync('testnet', 'rMerchant'));
+        self::assertTrue($core->refundThrottle()?->shouldSync('testnet', 'rMerchant'));
     }
 
     public function testThePortsAreReachableForAnAdapterThatNeedsThem(): void

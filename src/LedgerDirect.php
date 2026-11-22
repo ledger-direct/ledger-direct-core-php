@@ -10,14 +10,18 @@ use Hardcastle\LedgerDirect\Core\Payment\PaymentIntentService;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentStatus;
 use Hardcastle\LedgerDirect\Core\Payment\SettlementPolicy;
 use Hardcastle\LedgerDirect\Core\Port\ConfigProviderInterface;
+use Hardcastle\LedgerDirect\Core\Port\RefundRepositoryInterface;
 use Hardcastle\LedgerDirect\Core\Port\XrplTransactionRepositoryInterface;
 use Hardcastle\LedgerDirect\Core\Price\PriceService;
 use Hardcastle\LedgerDirect\Core\Xrpl\AccountInspector;
 use Hardcastle\LedgerDirect\Core\Xrpl\DestinationTagService;
+use Hardcastle\LedgerDirect\Core\Xrpl\RefundReconciler;
+use Hardcastle\LedgerDirect\Core\Xrpl\RefundService;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncService;
 use Hardcastle\LedgerDirect\Core\Xrpl\SyncThrottle;
 use Hardcastle\LedgerDirect\Core\Xrpl\XrplClient;
 use InvalidArgumentException;
+use LogicException;
 use Psr\Clock\ClockInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
@@ -53,6 +57,9 @@ final class LedgerDirect
     private ?PaymentIntentService $paymentIntentService = null;
     private ?SettlementPolicy $settlementPolicy = null;
     private ?SyncThrottle $syncThrottle = null;
+    private ?RefundService $refundService = null;
+    private ?RefundReconciler $refundReconciler = null;
+    private ?SyncThrottle $refundThrottle = null;
 
     private function __construct(
         private readonly ClientInterface $httpClient,
@@ -66,6 +73,8 @@ final class LedgerDirect
         private readonly string $nativeAssetTolerance,
         private readonly int $rateFreshTtlSeconds,
         private readonly string $chain,
+        private readonly ?RefundRepositoryInterface $refundRepository,
+        private readonly ?string $refundReferenceKey,
     ) {
     }
 
@@ -78,6 +87,11 @@ final class LedgerDirect
      * @param string $chain 'XRPL' or 'XAHAU' — the protocol is the same, so one root serves either;
      *     a shop that takes both holds two roots, each with its own repository (Xahau's tables,
      *     see Xrpl\Schema) and its own configuration under the chain's name
+     * @param RefundRepositoryInterface|null $refundRepository the chain's refund table
+     *     (Xrpl\RefundSchema). Null for a platform that has not adopted refunds: everything else
+     *     works as before, and refundService() says what is missing.
+     * @param string|null $refundReferenceKey a secret of the installation that refund references
+     *     are derived with, see RefundService; null makes them random
      */
     public static function create(
         ClientInterface $httpClient,
@@ -91,6 +105,8 @@ final class LedgerDirect
         string $nativeAssetTolerance = SettlementPolicy::DEFAULT_NATIVE_ASSET_TOLERANCE,
         int $rateFreshTtlSeconds = PriceService::DEFAULT_FRESH_TTL_SECONDS,
         string $chain = ChainCatalog::XRPL,
+        ?RefundRepositoryInterface $refundRepository = null,
+        ?string $refundReferenceKey = null,
     ): self {
         if (!in_array($chain, [ChainCatalog::XRPL, ChainCatalog::XAHAU], true)) {
             throw new InvalidArgumentException("LedgerDirect serves XRPL and XAHAU; '{$chain}' has its own root.");
@@ -108,6 +124,8 @@ final class LedgerDirect
             $nativeAssetTolerance,
             $rateFreshTtlSeconds,
             $chain,
+            $refundRepository,
+            $refundReferenceKey,
         );
     }
 
@@ -199,6 +217,76 @@ final class LedgerDirect
             PaymentStatus::MIN_SYNC_INTERVAL_SECONDS,
             $this->clock,
             $this->chain,
+        );
+    }
+
+    public function refundRepository(): ?RefundRepositoryInterface
+    {
+        return $this->refundRepository;
+    }
+
+    /**
+     * Preview, create, cancel and book refunds (INVARIANTS.md, "Refund").
+     *
+     * @throws LogicException when the root was created without a refund repository
+     */
+    public function refundService(): RefundService
+    {
+        return $this->refundService ??= new RefundService(
+            $this->xrplClient(),
+            $this->transactionRepository,
+            $this->requireRefundRepository(),
+            $this->logger,
+            $this->clock,
+            $this->chain,
+            $this->refundReferenceKey,
+            $this->refundReconciler(),
+        );
+    }
+
+    /**
+     * Finds the refunds' payments on the ledger: reconcileWatched() for a scheduled task,
+     * reconcile() for one paying account.
+     *
+     * @throws LogicException when the root was created without a refund repository
+     */
+    public function refundReconciler(): RefundReconciler
+    {
+        return $this->refundReconciler ??= new RefundReconciler(
+            $this->xrplClient(),
+            $this->requireRefundRepository(),
+            $this->logger,
+            $this->clock,
+            $this->cache,
+            $this->chain,
+        );
+    }
+
+    /**
+     * The throttle for a refund's status endpoint, in a key space of its own: the look for a
+     * refund's execution and the payment sync of the same account do not hold each other back.
+     * Null without a cache, like syncThrottle().
+     */
+    public function refundThrottle(): ?SyncThrottle
+    {
+        if ($this->cache === null) {
+            return null;
+        }
+
+        return $this->refundThrottle ??= new SyncThrottle(
+            $this->cache,
+            $this->logger,
+            PaymentStatus::MIN_SYNC_INTERVAL_SECONDS,
+            $this->clock,
+            $this->chain,
+            'refund',
+        );
+    }
+
+    private function requireRefundRepository(): RefundRepositoryInterface
+    {
+        return $this->refundRepository ?? throw new LogicException(
+            'Refunds need a refund repository: pass refundRepository to LedgerDirect::create().'
         );
     }
 

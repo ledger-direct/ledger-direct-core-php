@@ -45,6 +45,36 @@ final class SyncThrottleTest extends TestCase
     }
 
     /**
+     * The look for a refund's execution reads the same account as the payment sync. Each has
+     * its own key space: neither holds the other back.
+     */
+    public function testAPurposeHasItsOwnKeySpace(): void
+    {
+        $clock = new FrozenClock();
+        $cache = new InMemoryCache($clock);
+        $payments = new SyncThrottle($cache, new RecordingLogger(), 5, $clock);
+        $refunds = new SyncThrottle($cache, new RecordingLogger(), 5, $clock, 'XRPL', 'refund');
+
+        $payments->markSynced('testnet', 'rAccount');
+
+        self::assertFalse($payments->shouldSync('testnet', 'rAccount'));
+        self::assertTrue($refunds->shouldSync('testnet', 'rAccount'));
+
+        $refunds->markSynced('testnet', 'rAccount');
+        $clock->advance(5);
+        $payments->markSynced('testnet', 'rAccount');
+
+        self::assertTrue($refunds->shouldSync('testnet', 'rAccount'), 'the payment sync does not renew the refund mark');
+    }
+
+    public function testAPurposeThatDoesNotFitAKeyIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new SyncThrottle(new InMemoryCache(new FrozenClock()), new RecordingLogger(), 5, null, 'XRPL', 'refund.pass');
+    }
+
+    /**
      * A broken cache degrades to "always sync", never to "never sync".
      */
     public function testABrokenCacheMeansSyncAndAWarning(): void

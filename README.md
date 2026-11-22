@@ -108,6 +108,10 @@ contract every repository implementation has to keep — extend it, implement `r
 the newest-first ordering, the per-network cursor and the random counter start are covered. It
 needs PHPUnit, which the core only suggests.
 
+For refunds the kit has `InMemoryRefundRepository` and `RefundRepositoryContractTestCase`: the
+four unique rules, the versioned update and the queries a repository for
+`Port\RefundRepositoryInterface` has to keep (`INVARIANTS.md`, "Refund").
+
 ## Continuous integration
 
 `ci.yml` ends in one job that sums up the others, *CI passed*, the check a merge into `master`
