@@ -6,6 +6,9 @@ namespace Hardcastle\LedgerDirect\Core\Tests\Payment;
 
 use Hardcastle\LedgerDirect\Core\Payment\PaymentIntent;
 use Hardcastle\LedgerDirect\Core\Payment\PaymentUri;
+use Hardcastle\LedgerDirect\Core\Refund\Refund;
+use Hardcastle\LedgerDirect\Core\Refund\RefundDestination;
+use Hardcastle\LedgerDirect\Core\Xrpl\LedgerAmount;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -134,6 +137,78 @@ final class PaymentUriTest extends TestCase
             pairing: $asset . '/EUR', exchangeRate: 1.18,
             amountRequested: ['currency' => $currency, 'value' => $value, 'issuer' => $issuer],
             destinationAccount: self::ACCOUNT, destinationTag: self::TAG,
+        );
+    }
+
+    /**
+     * A refund's request. Scanned with Xaman on both testnets (2026-11-20): without `dt` to an
+     * account, with `dt`, a token, and `invoiceid` arriving as the payment's InvoiceID.
+     */
+    public function testARefundRequestNamesDestinationAmountAndReferenceAndNoTagWhenThereIsNone(): void
+    {
+        $refund = self::refund(tag: null, amount: LedgerAmount::native('1.01'));
+
+        self::assertSame(
+            'https://xrplf.org//send?to=rD8GY2xd9q8aRtfYqBWdngj2TsF2wL5Jnk&amount=1.01'
+                . '&invoiceid=5D4BEC5D69EB53BB0384945D4572489CAFCB75C69CD6DBFC681D3FC0677D4774&network=TESTNET',
+            PaymentUri::forRefund($refund),
+        );
+    }
+
+    /**
+     * No tag is not tag 0: a refund with tag 0 says so, a refund without a tag has no `dt` at all.
+     */
+    public function testARefundRequestCarriesItsTagAlsoWhenItIsZero(): void
+    {
+        self::assertStringContainsString('&dt=0&', PaymentUri::forRefund(self::refund(tag: 0, amount: LedgerAmount::native('1.01'))));
+        self::assertStringContainsString('&dt=4294967295&', PaymentUri::forRefund(self::refund(tag: 4294967295, amount: LedgerAmount::native('1.01'))));
+        self::assertStringNotContainsString('dt=', PaymentUri::forRefund(self::refund(tag: null, amount: LedgerAmount::native('1.01'))));
+    }
+
+    public function testATokenRefundRequestKeepsTheOrderOfParameters(): void
+    {
+        $refund = self::refund(
+            tag: 20261121,
+            amount: LedgerAmount::issued('524C555344000000000000000000000000000000', 'rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV', '1.05'),
+        );
+
+        self::assertSame(
+            'https://xrplf.org//send?to=rD8GY2xd9q8aRtfYqBWdngj2TsF2wL5Jnk&dt=20261121&amount=1.05'
+                . '&currency=524C555344000000000000000000000000000000&issuer=rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV'
+                . '&invoiceid=5D4BEC5D69EB53BB0384945D4572489CAFCB75C69CD6DBFC681D3FC0677D4774&network=TESTNET',
+            PaymentUri::forRefund($refund),
+        );
+    }
+
+    public function testARefundRequestOnXahauNamesXahausNetwork(): void
+    {
+        $refund = self::refund(tag: null, amount: LedgerAmount::native('1.01'), chain: 'XAHAU', network: 'mainnet');
+
+        self::assertStringEndsWith('&network=XAHAU', PaymentUri::forRefund($refund));
+    }
+
+    private static function refund(?int $tag, LedgerAmount $amount, string $chain = 'XRPL', string $network = 'testnet'): Refund
+    {
+        return Refund::request(
+            id: '0123456789abcdef0123456789abcdef',
+            chain: $chain,
+            network: $network,
+            purpose: Refund::PURPOSE_ORDER_REFUND,
+            platformReference: 'order-transaction-1',
+            sourceHash: str_repeat('A', 64),
+            serial: 1,
+            payingAccount: 'rHKho3gASqL4SQYjnrrKdAoq2a3vyyLLKL',
+            destination: new RefundDestination(
+                'rD8GY2xd9q8aRtfYqBWdngj2TsF2wL5Jnk',
+                $tag,
+                RefundDestination::ORIGIN_STATED,
+                $tag === null ? RefundDestination::ATTESTATION_OWN_WALLET : null,
+            ),
+            amount: $amount,
+            reference: '5D4BEC5D69EB53BB0384945D4572489CAFCB75C69CD6DBFC681D3FC0677D4774',
+            createdAt: 1_800_000_000,
+            createdLedger: 22_475_000,
+            createdBy: 'admin',
         );
     }
 }
