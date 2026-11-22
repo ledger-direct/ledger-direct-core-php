@@ -47,10 +47,11 @@ final readonly class LedgerTransaction
      * @param string|null $result `meta.TransactionResult`; null while the transaction is not validated
      * @param int|null $destinationTag null when the transaction carries none, which is not tag 0
      * @param string|null $invoiceId the `InvoiceID` field, 64 hex digits in upper case
-     * @param LedgerAmount|null $delivered `meta.delivered_amount` of a successful transaction; null
-     *     when it delivered nothing this class can read (not a payment, failed, or an amount kind
-     *     {@see LedgerAmount} does not model)
-     * @param LedgerAmount|null $sendMax what the sender was willing to spend, when stated
+     * @param LedgerAmount|null $delivered `meta.delivered_amount` of a validated, successful
+     *     Payment; null for everything else (another transaction type, failed, not validated, or
+     *     an amount kind {@see LedgerAmount} does not model)
+     * @param LedgerAmount|null $sendMax what the sender of a validated Payment was willing to
+     *     spend, when stated; null for everything else
      * @param int|null $date seconds since the ledger's epoch (2000-01-01), as the ledger states it
      */
     private function __construct(
@@ -189,8 +190,16 @@ final readonly class LedgerTransaction
             throw self::unusable($hash, 'its Flags are not an unsigned integer');
         }
 
+        /*
+         * Amounts are read from a final Payment and from nothing else. A CheckCash carries a
+         * delivered amount too, and a CheckCreate a SendMax, but neither is a payment from
+         * `Account` to `Destination`; and what a transaction says before it is validated is
+         * not yet what happened.
+         */
+        $finalPayment = $validated && $type === self::TYPE_PAYMENT;
+
         $delivered = null;
-        if ($result === self::RESULT_SUCCESS && is_array($meta)) {
+        if ($finalPayment && $result === self::RESULT_SUCCESS && is_array($meta)) {
             $delivered = self::amount($meta['delivered_amount'] ?? $meta['DeliveredAmount'] ?? null);
         }
 
@@ -208,7 +217,7 @@ final readonly class LedgerTransaction
             sourceTag: self::tag($fields, 'SourceTag', $hash),
             invoiceId: $invoiceId,
             delivered: $delivered,
-            sendMax: self::amount($fields['SendMax'] ?? null),
+            sendMax: $finalPayment ? self::amount($fields['SendMax'] ?? null) : null,
             flags: $flags,
             date: is_int($date) ? $date : null,
         );

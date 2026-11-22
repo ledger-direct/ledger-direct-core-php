@@ -219,8 +219,35 @@ final class LedgerTransactionTest extends TestCase
         self::assertNull($pending->result);
         self::assertNull($pending->ledgerIndex);
         self::assertNull($pending->delivered);
+        self::assertNull($pending->sendMax, 'what it was willing to spend is not yet what happened either');
+        self::assertFalse($pending->isCrossCurrency());
         self::assertFalse($pending->succeeded());
         self::assertFalse($pending->failed());
+    }
+
+    /**
+     * Amounts are a Payment's. A CheckCash has a delivered amount in its metadata and a
+     * CheckCreate a SendMax, and neither moved that amount from `Account` to `Destination`.
+     */
+    public function testATransactionThatIsNotAPaymentExposesNoAmounts(): void
+    {
+        $checkCash = self::recorded('tx-incoming-pathed.json');
+        $checkCash['TransactionType'] = 'CheckCash';
+        unset($checkCash['Destination'], $checkCash['DestinationTag'], $checkCash['SendMax']);
+
+        $cashed = LedgerTransaction::fromTx($checkCash);
+        self::assertTrue($cashed->succeeded());
+        self::assertFalse($cashed->isPayment());
+        self::assertNull($cashed->delivered, 'although meta.delivered_amount is there');
+
+        $checkCreate = self::recorded('tx-incoming-pathed.json');
+        $checkCreate['TransactionType'] = 'CheckCreate';
+
+        $created = LedgerTransaction::fromTx($checkCreate);
+        self::assertTrue($created->succeeded());
+        self::assertNull($created->sendMax, 'although the SendMax field is there');
+        self::assertNull($created->delivered);
+        self::assertFalse($created->isCrossCurrency());
     }
 
     public function testADeliveredAmountOfAnUnknownKindIsNullAndTheTransactionStillReads(): void
