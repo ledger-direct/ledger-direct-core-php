@@ -73,7 +73,7 @@ final readonly class LedgerAmount
         }
 
         if (is_string($amount)) {
-            if (preg_match('/^\d+$/', $amount) !== 1) {
+            if (preg_match('/^\d+\z/', $amount) !== 1) {
                 throw new InvalidArgumentException("'{$amount}' is not an amount in drops.");
             }
 
@@ -138,7 +138,7 @@ final readonly class LedgerAmount
      */
     private static function currencyCode(string $currency): string
     {
-        if (preg_match('/^[0-9A-Fa-f]{40}$/', $currency) === 1) {
+        if (preg_match('/^[0-9A-Fa-f]{40}\z/', $currency) === 1) {
             return strtoupper($currency);
         }
 
