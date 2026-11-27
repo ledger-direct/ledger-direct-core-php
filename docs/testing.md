@@ -108,7 +108,12 @@ the adapters. The manual cases are RF-01…RF-22 in
 - **The testnet is not persistent.** A reset deletes every account. On the XRP Ledger testnet
   `ld-e2e wallet ensure` has the faucet recreate the **same** address and sets its trust lines again, so
   no secret changes. RLUSD and USDC have to come in by hand from the issuers' faucets: the testnet DEX
-  had no seller for USDC on 2026-11-09, and a reset empties it.
+  had no seller for USDC on 2026-11-09, and a reset empties it. Until Ripple and Circle create their
+  issuers again, neither token exists at all: for seven days of ledgers after a reset (validated ledger
+  below 186 000) the harness and the try walks withdraw a token whose issuer is missing, with a warning,
+  and skip what needs it (PS-04, PS-13, the RLUSD and USDC walks). After that a missing issuer is an
+  error, since it may have come back under another address; the registry changes only from the issuer's
+  own documentation.
 - **The Xaman scan (PW-04) is proven on all four platforms** (Shopware 1.4.0, Magento 1.1.0, PrestaShop
   0.5.0 and WooCommerce 1.3.0, XRP and RLUSD each): one `PaymentUri` in the core, every page scanned once.
   PW-01…PW-03 (browser wallets, network hint, phone layout) are proven on Shopware only.
