@@ -15,3 +15,6 @@
 # named anything else slipped past the narrower pattern once and shipped inside a
 # release tarball. Nothing the package publishes is named Handover-*.md.
 /Handover-*.md
+
+# The decision register, cloned by bin/decisions. It is private: never commit it.
+/.decisions/

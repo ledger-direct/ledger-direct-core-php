@@ -1,5 +1,7 @@
 # Invariants
 
+Decision: LD-0017, LD-0018 (ids like these name ADRs of the LedgerDirect decision register; `bin/decisions` lists the ones that apply here)
+
 This document is the authoritative contract for `hardcastle/ledger-direct-core`. It is not derived
 from the code — the code is derived from this. Every platform adapter (PrestaShop, Magento,
 WooCommerce, …) and the later Pro/retrofit branch is measured against it. Ground truth is the
@@ -60,6 +62,8 @@ Field names are literal and identical across all plugins:
 - Rounding: stablecoins → 2 decimal places, XRP → 5 decimal places.
 
 ## Settlement
+
+Decision: LD-0021, LD-0025, LD-0026, LD-0038
 
 Whether a delivered amount pays for a quote is a core decision (`Core\Payment\SettlementPolicy`),
 not a per-plugin one: every platform must call an order paid under exactly the same conditions.
@@ -126,6 +130,8 @@ the intent:
 
 ## Payment status
 
+Decision: LD-0038, LD-0040, LD-0041
+
 "Is this order paid?" has one answer shape across every platform: `Core\Payment\PaymentStatus`,
 **derived** from a `PaymentIntent`, a `SettlementPolicy` and the clock — never stored, no new
 record, no migration. Every platform's status endpoint serializes it and appends only what the
@@ -184,6 +190,8 @@ never `0` in `waiting`; a quote without an `expiry` never expires and has no cou
   status and nothing else, so a guessed key reveals nothing the payment page doesn't show already.
 
 ## Payment request — the QR code and the wallet apps
+
+Decision: LD-0045
 
 One payment request per order, built by `Core\Payment\PaymentUri::forIntent()` on the server and
 identical on every platform; the page script only renders it as a QR code, and the wallet apps
@@ -277,6 +285,8 @@ the chain like the other XRPL classes; a shop on both chains holds two roots.
 
 ### The record
 
+Decision: LD-0053
+
 `Refund\Refund`, schema version 1, immutable; a change is a new instance with `version` raised
 by one. Three states: `awaiting_execution` → `executed` or `cancelled`; a cancelled refund can
 still become `executed`, because a payment that happened is not undone by what the request said.
@@ -319,6 +329,8 @@ counted for the order (`PaymentOverview::$orderRefundState`) — not against the
 the shop's currency, which can change after the payment.
 
 ### The destination and its tag
+
+Decision: LD-0050
 
 A destination has an origin: `sender` (the account the source payment came from) or `stated` (an
 address the customer named and the merchant entered).
@@ -383,6 +395,8 @@ moment on another payment of the order — the new refund is withdrawn (stored a
 the request refused. Two that race may both be refused; never both stay.
 
 ### The payment request
+
+Decision: LD-0053
 
 `Core\Payment\PaymentUri::forRefund()`, the same form and the same builder as a customer's
 request:
@@ -514,6 +528,8 @@ a platform does when it books must be safe to do twice (a state that is already 
 a note is written under the refund's id).
 
 ### Tables
+
+Decision: LD-0053
 
 `ledger_direct_xrpl_refund` and `ledger_direct_xahau_refund` (`Xrpl\RefundSchema`), an entry of
 its own: `Schema::tables()` still describes exactly the two tables it always did.
@@ -730,6 +746,8 @@ take the payment?").
 
 ### Registry — security-critical
 
+Decision: LD-0027
+
 `Stellar\StablecoinRegistry` holds USDC and EURC for mainnet and testnet. The issuers were copied
 from Circle's developer documentation on 2026-09-30, verified against Horizon the same day (the
 asset exists on its network under that issuer, held by thousands of accounts), and both the
@@ -772,12 +790,16 @@ on 2026-11-06 (fixtures under `tests/Xahau/fixtures/`).
 
 ### Names in the record
 
+Decision: LD-0022
+
 - `chain` is **`XAHAU`** — not a network of `XRPL`: `base_asset` XAH on `chain: XRPL` would be
   false, and the native asset follows the chain. `network` is `mainnet` | `testnet`.
 - `type` is `xahau-xah-payment`, `base_asset` `XAH`, `amount_requested` a number as for XRP.
 - No issued assets yet. Euro stablecoins exist on Xahau; none is in a registry.
 
 ### Tables
+
+Decision: LD-0021
 
 `ledger_direct_xahau_tx` and `ledger_direct_xahau_destination_tag`, with the XRPL tables'
 columns; index names carry `xahau`, since PostgreSQL wants an index name unique per schema. **No
@@ -838,6 +860,8 @@ the parameter was shown to trigger the switch hint. XRP Ledger requests name the
 
 ## Amount encoding on XRPL
 
+Decision: LD-0025
+
 The ledger's wire encoding is **not** the record's shape, and the core owns the translation:
 
 | | On the wire (e.g. `meta.delivered_amount`) | In a `PaymentIntent` |
@@ -857,6 +881,8 @@ The ledger's wire encoding is **not** the record's shape, and the core owns the 
 - **This is ledger encoding, not a platform detail** — no adapter reimplements it.
 
 ## StablecoinRegistry — security-critical
+
+Decision: LD-0027
 
 > A wrong issuer address sends customer funds to a dead trustline → real, unrecoverable loss.
 > **Do not hand-transcribe these values from memory.** They were pulled from the Shopware
@@ -891,6 +917,8 @@ currency code is still the 40-character USDC representation.
 - All catches are logged via PSR-3.
 
 ## Tables
+
+Decision: LD-0020, LD-0024
 
 - `ledger_direct_xrpl_tx`, `ledger_direct_xrpl_destination_tag` — naming convention
   `ledger_direct_{chain}_{entity}`. These are **logical/base** names; each platform adapter
@@ -973,6 +1001,8 @@ note or a broken cache mean the behaviour before: a failing request, a warning a
 on every sync — never no sync.
 
 ## Security
+
+Decision: LD-0027
 
 - The issuer is **never** merchant-configurable.
 - SSL is always verified on outbound HTTP calls.
