@@ -4,3 +4,7 @@
 /docker-compose.yml export-ignore
 /phpunit.xml.dist   export-ignore
 /Handover-*.md     export-ignore
+/bin                export-ignore
+/AGENTS.md          export-ignore
+/docs/adr           export-ignore
+/.coderabbit.yaml   export-ignore
